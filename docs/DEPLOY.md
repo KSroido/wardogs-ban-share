@@ -136,6 +136,26 @@ Cloudflare Dashboard → **Workers & Pages** → **Create** → **Connect to Git
 - Workers Builds 会自动注入 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，不需要手工配置。
 - 如果构建镜像里没有 Python/Go，CI 只跑 Node 部分；Python/Go 测试在本地或自己的流水线里跑。
 
+### 当前生产配置（已生效）
+
+| 配置项 | 值 |
+|---|---|
+| Worker | `wardogs-ban-share` |
+| 仓库 | `KSroido/wardogs-ban-share` |
+| 生产分支 | `main` |
+| Build command | `npm ci && npm run ci` |
+| Deploy command | `npx wrangler d1 migrations apply wardogs_bans --remote --config apps/api/wrangler.jsonc && npx wrangler deploy --config apps/api/wrangler.jsonc` |
+| Root directory | `/` |
+| 构建缓存 | 开启 |
+| 触发方式 | push 到 `main`，或 API 手动触发 |
+| 预览分支 | 未启用（避免预览构建误跑生产 D1 迁移） |
+
+Builds 使用名为 `wardogs-ban-share CI` 的 **build token** 部署 Worker。它由创建时的 Cloudflare API Token 生成：
+
+- 轮换/删除那个 API Token 后，构建会因无法部署而失败；
+- 需要到 Worker → **Settings → Builds → API token** 重新生成，或创建一个权限更小的专用 Token 后重建 build token，并用 `PATCH /builds/triggers/{uuid}` 把 trigger 指向新的 `build_token_uuid`；
+- build token 只用于部署，不要把它当成成员服 API key。
+
 ### 预览分支
 
 非 `main` 分支默认生成预览部署，但**不要**让预览分支跑生产 D1 迁移。两种做法：
