@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wardogs-banlist"
+version = "0.1.0"
+description = "Python client for the Wardogs federated ban list"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Wardogs Ban Share contributors" }]
+keywords = ["wardogs", "banlist", "steam", "moderation"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/KSroido/wardogs-ban-share"
+
+[tool.setuptools.packages.find]
+include = ["wardogs_banlist*"]

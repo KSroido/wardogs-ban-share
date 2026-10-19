@@ -1,0 +1,79 @@
+name: 服务器加入申请
+description: 申请加入 Wardogs 联合 ban 名单，审核通过后会收到专属 API key
+title: "[加入申请] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **不要在 Issue 里粘贴 API key、密码或 token。**
+
+        提交前请先读 [接入指南](https://github.com/KSroido/wardogs-ban-share/blob/main/docs/ONBOARDING.md)。
+        维护者会在这里回复审核结果，并通过私密渠道下发 `wdb_...` 密钥。
+  - type: input
+    id: server_name
+    attributes:
+      label: 服务器名称
+      description: 会显示在每条 ban 记录里
+      placeholder: Wardogs Main
+    validations:
+      required: true
+  - type: input
+    id: server_id
+    attributes:
+      label: 服务器 ID（slug）
+      description: 小写字母、数字、短横线，2-31 位；创建后不能修改
+      placeholder: wardogs-main
+    validations:
+      required: true
+  - type: input
+    id: contact
+    attributes:
+      label: 联系方式
+      description: Discord / QQ / 邮箱，用于审核沟通和密钥下发
+      placeholder: "Discord: name#0000"
+    validations:
+      required: true
+  - type: input
+    id: region
+    attributes:
+      label: 服务器地区
+      placeholder: CN / Asia / EU
+    validations:
+      required: true
+  - type: input
+    id: population
+    attributes:
+      label: 大致在线人数
+      placeholder: 峰值 48 / 日均 20
+    validations:
+      required: false
+  - type: textarea
+    id: rules
+    attributes:
+      label: 管理规范与申诉渠道
+      description: 链接或简述你们的封禁标准、申诉方式
+      placeholder: |
+        规则：https://...
+        申诉：Discord #appeal
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: 申请理由
+      description: 为什么需要联合名单，能提供什么
+    validations:
+      required: true
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: 承诺
+      options:
+        - label: 我确认服务器真实存在，且我有权代表该服务器申请
+          required: true
+        - label: 我同意只将名单用于本服的反作弊/社区管理，不公开转卖或批量泄露
+          required: true
+        - label: 我理解误封由本服负责撤销，联盟不替成员服裁决申诉
+          required: true
+        - label: 我会把密钥保存在服务器的环境变量/secret 管理器中，不提交到仓库或发到公开渠道
+          required: true

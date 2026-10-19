@@ -1,0 +1,26 @@
+{
+  "name": "wardogs-ban-share",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Federated ban list for Wardogs community servers",
+  "license": "MIT",
+  "workspaces": [
+    "apps/api",
+    "packages/sdk-ts",
+    "examples/ts"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/api",
+    "deploy": "npm run deploy --workspace apps/api",
+    "migrate:local": "npm run migrate:local --workspace apps/api",
+    "migrate:remote": "npm run migrate:remote --workspace apps/api",
+    "test": "npm run test --workspace packages/sdk-ts && npm run test --workspace apps/api",
+    "typecheck": "npm run typecheck --workspace packages/sdk-ts && npm run typecheck --workspace apps/api",
+    "build:sdk": "npm run build --workspace packages/sdk-ts",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "ci": "npm run check:secrets && npm run typecheck && npm run test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

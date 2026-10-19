@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 接入指南
+    url: https://github.com/KSroido/wardogs-ban-share/blob/main/docs/ONBOARDING.md
+    about: 申请通过后如何保存密钥、首次同步、增量拉取
+  - name: API 文档
+    url: https://github.com/KSroido/wardogs-ban-share/blob/main/docs/API.md
+    about: 端点、字段、错误码和限制
+  - name: 安全问题
+    url: https://github.com/KSroido/wardogs-ban-share/blob/main/SECURITY.md
+    about: 不要在公开 Issue 里贴密钥或利用细节

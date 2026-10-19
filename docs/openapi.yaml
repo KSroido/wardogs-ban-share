@@ -1,0 +1,681 @@
+openapi: 3.1.0
+info:
+  title: Wardogs Ban Share API
+  version: 0.1.0
+  summary: Federated ban list for Wardogs community servers
+  description: |
+    Shared ban records between member servers. Every member server holds a
+    bearer key bound to exactly one server; reads also require a key because
+    the list contains SteamID64 values.
+
+    Times are ISO 8601 UTC strings with millisecond precision. SteamID64 is
+    always a string so that JavaScript clients do not lose precision.
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: Wardogs Ban Share maintainers
+    url: https://github.com/KSroido/wardogs-ban-share/issues
+
+servers:
+  - url: https://wardogs.ksroido.art/api/ban-share
+    description: Production
+
+tags:
+  - name: Health
+  - name: Bans
+  - name: Players
+  - name: Servers
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      operationId: health
+      summary: Liveness check
+      security: []
+      responses:
+        '200':
+          description: Worker and bindings are up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /v1/bans:
+    get:
+      tags: [Bans]
+      operationId: listBans
+      summary: List ban records (incremental sync)
+      description: |
+        Returns records ordered by `(updated_at, id)` ascending.
+
+        For sync, send `status=all` and persist `server_time` from the response
+        as the next `since`. Without `all`, revocations are invisible.
+
+        When both `since` and `cursor` are present, both apply; the stricter
+        bound wins.
+      parameters:
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Reason'
+        - $ref: '#/components/parameters/SteamIdFilter'
+        - $ref: '#/components/parameters/ServerFilter'
+        - $ref: '#/components/parameters/Permanent'
+      responses:
+        '200':
+          description: One page of records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BanPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Bans]
+      operationId: submitBans
+      summary: Submit 1-100 bans
+      description: |
+        Each entry is validated independently. Duplicates are detected by
+        `(server_id, external_case_id)` or by an existing non-revoked,
+        non-expired ban for the same player on the same server.
+
+        | Status | Meaning |
+        |---|---|
+        | 201 | at least one created, no errors |
+        | 200 | no errors, nothing created (all duplicates) |
+        | 207 | errors plus at least one created or duplicate |
+        | 422 | every entry failed validation |
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bans]
+              properties:
+                bans:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    $ref: '#/components/schemas/SubmitBanInput'
+      responses:
+        '200':
+          description: No new records (all duplicates)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitBansResult'
+        '201':
+          description: At least one record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitBansResult'
+        '207':
+          description: Partial success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitBansResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          description: All entries failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitBansResult'
+
+  /v1/bans/{id}/revoke:
+    post:
+      tags: [Bans]
+      operationId: revokeBan
+      summary: Revoke one of your own bans
+      description: |
+        Only the server that issued the ban may revoke it. Repeated calls are
+        idempotent and return the current record.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: Updated record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ban'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/players:
+    get:
+      tags: [Players]
+      operationId: listPlayers
+      summary: Players ranked by cross-server reports
+      description: Reads the aggregate read model only; no ban details are returned.
+      parameters:
+        - $ref: '#/components/parameters/PlayerSort'
+        - $ref: '#/components/parameters/PlayerLimit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Ranked players
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/players/{steamId}:
+    get:
+      tags: [Players]
+      operationId: getPlayer
+      summary: One player's aggregate plus every ban record
+      parameters:
+        - name: steamId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^7656119\d{10}$'
+        - $ref: '#/components/parameters/PlayerStatus'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        '200':
+          description: Player detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/servers:
+    get:
+      tags: [Servers]
+      operationId: listServers
+      summary: Member servers
+      responses:
+        '200':
+          description: Member servers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Server'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: wdb_<base64url>
+      description: Server key issued by the maintainers. Bound to one server.
+
+  parameters:
+    Status:
+      name: status
+      in: query
+      description: |
+        `active` (default): not revoked and not past `expires_at`.
+        `expired`: not revoked but past `expires_at`.
+        `revoked`: revoked.
+        `all`: no status filter; use this for sync.
+      schema:
+        type: string
+        enum: [active, expired, revoked, all]
+        default: active
+    PlayerStatus:
+      name: status
+      in: query
+      description: Filters the `bans` array only; `reports` is always complete.
+      schema:
+        type: string
+        enum: [active, expired, revoked, all]
+        default: all
+    Since:
+      name: since
+      in: query
+      description: Exclusive lower bound on `updated_at`
+      schema:
+        type: string
+        format: date-time
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from `next_cursor`
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    Reason:
+      name: reason
+      in: query
+      description: Comma separated, at most 8 values
+      schema:
+        type: string
+      example: cheat,racism
+    SteamIdFilter:
+      name: steam_id
+      in: query
+      description: Comma separated exact SteamID64 matches, at most 50
+      schema:
+        type: string
+    ServerFilter:
+      name: server
+      in: query
+      description: Comma separated server slugs, at most 50
+      schema:
+        type: string
+    Permanent:
+      name: permanent
+      in: query
+      schema:
+        type: boolean
+    PlayerSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum: [servers, active_servers, bans, active_bans, last_reported_at]
+        default: servers
+    PlayerLimit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 10000
+        default: 0
+
+  responses:
+    BadRequest:
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Missing, malformed or revoked key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Missing scope, defederated server, or another server's record
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Record not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    PayloadTooLarge:
+      description: Body over 1 MB
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    BanReason:
+      type: string
+      enum: [cheat, rulebreak, chattroll, gametroll, racism, foreigner, steamrisk, ownreason]
+      description: |
+        `foreigner` and `steamrisk` are advisory judgements; clients should not
+        auto-kick on them alone. `ownreason` requires a `note`.
+
+    BanStatus:
+      type: string
+      enum: [active, expired, revoked]
+
+    ServerStatus:
+      type: string
+      enum: [active, defederated]
+
+    ServerRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          description: Stable slug
+        name:
+          type: string
+
+    Server:
+      allOf:
+        - $ref: '#/components/schemas/ServerRef'
+        - type: object
+          required: [status, created_at]
+          properties:
+            status:
+              $ref: '#/components/schemas/ServerStatus'
+            note:
+              type: [string, 'null']
+            created_at:
+              type: string
+              format: date-time
+
+    PlayerReports:
+      type: object
+      description: |
+        Aggregate over non-revoked bans. `active_*` additionally excludes bans
+        past `expires_at`. A player whose bans are all revoked has no row.
+      required:
+        - steam_id
+        - server_count
+        - active_server_count
+        - ban_count
+        - active_ban_count
+        - permanent_count
+        - reason_counts
+        - updated_at
+      properties:
+        steam_id:
+          type: string
+          pattern: '^7656119\d{10}$'
+        server_count:
+          type: integer
+          minimum: 0
+          description: Distinct servers that reported this player
+        active_server_count:
+          type: integer
+          minimum: 0
+        ban_count:
+          type: integer
+          minimum: 0
+        active_ban_count:
+          type: integer
+          minimum: 0
+        permanent_count:
+          type: integer
+          minimum: 0
+        reason_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 1
+        first_reported_at:
+          type: [string, 'null']
+          format: date-time
+        last_reported_at:
+          type: [string, 'null']
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Ban:
+      type: object
+      required:
+        - id
+        - server
+        - steam_id
+        - reason
+        - permanent
+        - status
+        - created_at
+        - updated_at
+        - reports
+      properties:
+        id:
+          type: string
+        server:
+          $ref: '#/components/schemas/ServerRef'
+        steam_id:
+          type: string
+          pattern: '^7656119\d{10}$'
+        player_name:
+          type: [string, 'null']
+        reason:
+          $ref: '#/components/schemas/BanReason'
+        note:
+          type: [string, 'null']
+        evidence_url:
+          type: [string, 'null']
+          format: uri
+        permanent:
+          type: boolean
+        duration_days:
+          type: [integer, 'null']
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        status:
+          $ref: '#/components/schemas/BanStatus'
+        external_case_id:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+        revoke_reason:
+          type: [string, 'null']
+        reports:
+          $ref: '#/components/schemas/PlayerReports'
+
+    SubmitBanInput:
+      type: object
+      required: [steam_id, reason, permanent]
+      properties:
+        steam_id:
+          type: string
+          pattern: '^7656119\d{10}$'
+        reason:
+          $ref: '#/components/schemas/BanReason'
+        permanent:
+          type: boolean
+        duration_days:
+          type: integer
+          minimum: 1
+          maximum: 36500
+          description: Required when `permanent` is false; must be omitted when true
+        note:
+          type: string
+          maxLength: 1000
+        player_name:
+          type: string
+          maxLength: 64
+        evidence_url:
+          type: string
+          format: uri
+          maxLength: 512
+        external_case_id:
+          type: string
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+
+    SubmitBanDuplicate:
+      type: object
+      required: [index, id, steam_id, reason, status]
+      properties:
+        index:
+          type: integer
+          minimum: 0
+        id:
+          type: string
+        steam_id:
+          type: string
+        reason:
+          $ref: '#/components/schemas/BanReason'
+        status:
+          $ref: '#/components/schemas/BanStatus'
+
+    SubmitBanError:
+      type: object
+      required: [index, code, message]
+      properties:
+        index:
+          type: integer
+          minimum: 0
+        code:
+          type: string
+        message:
+          type: string
+
+    SubmitBansResult:
+      type: object
+      required: [created, duplicates, errors]
+      properties:
+        created:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ban'
+        duplicates:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmitBanDuplicate'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmitBanError'
+
+    BanPage:
+      type: object
+      required: [data, next_cursor, has_more, server_time]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ban'
+        next_cursor:
+          type: [string, 'null']
+        has_more:
+          type: boolean
+        server_time:
+          type: string
+          format: date-time
+
+    PlayerDetail:
+      type: object
+      required: [steam_id, reports, bans]
+      properties:
+        steam_id:
+          type: string
+        reports:
+          $ref: '#/components/schemas/PlayerReports'
+        bans:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ban'
+
+    PlayerList:
+      type: object
+      required: [data, total, limit, offset]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayerReports'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    Health:
+      type: object
+      required: [ok, time, version]
+      properties:
+        ok:
+          type: boolean
+        time:
+          type: string
+          format: date-time
+        version:
+          type: string
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details: {}
+        request_id:
+          type: string

@@ -1,0 +1,49 @@
+name: 密钥轮换 / 吊销
+description: 申请吊销现有 API key（泄露、人员变动、迁移机器）
+title: "[密钥] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **不要在本 Issue 里填写完整密钥。** 只需要提供服务器 ID 和密钥前缀（`wdb_` 后的前 8 位），
+        或说明“全部吊销”。维护者会通过私密渠道下发新密钥。
+
+        如果密钥已经泄露，请先立即联系维护者，不要等待 Issue 处理。
+  - type: input
+    id: server_id
+    attributes:
+      label: 服务器 ID（slug）
+      placeholder: wardogs-main
+    validations:
+      required: true
+  - type: input
+    id: prefix
+    attributes:
+      label: 密钥前缀（可选）
+      description: 只填 `wdb_` 后面的前 8 位，不要填完整密钥
+      placeholder: AbCd1234
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 范围
+      options:
+        - 只吊销这一把 key
+        - 吊销该服全部 key
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: 原因
+      placeholder: 密钥出现在日志里 / 管理员离职 / 更换服务器
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我确认没有在本 Issue 里填写完整密钥
+          required: true

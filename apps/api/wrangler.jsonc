@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wardogs-ban-share",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-15",
+  "observability": {
+    "enabled": true
+  },
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "wardogs.ksroido.art/api/ban-share/*",
+      "zone_name": "ksroido.art"
+    }
+  ],
+  "triggers": {
+    "crons": ["0 4 * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "wardogs_bans",
+      "database_id": "766a8fa8-97d6-4724-8e8a-1a050252fa06",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

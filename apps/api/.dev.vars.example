@@ -1,0 +1,3 @@
+# Local development only. Copy to .dev.vars (git-ignored) and change the token.
+# Must be at least 24 characters.
+ADMIN_TOKEN=dev-admin-token-please-change-me
