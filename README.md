@@ -300,7 +300,7 @@ curl -G https://wardogs.ksroido.art/api/ban-share/v1/players \
 
 ## 部署
 
-线上已经部署在 Cloudflare（Workers + D1 + 自定义路由 + 每日 cron），CI/CD 使用 **Cloudflare Workers Builds**，GitHub 只存代码。
+线上已经部署在 Cloudflare（Workers + D1 + 自定义路由 + 每日 cron）。推荐用 **Cloudflare Workers Builds** 做 CI/CD，GitHub 只存代码；接入步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 从零部署、绑定域名、配置 `ADMIN_TOKEN`、迁移数据库的完整步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
