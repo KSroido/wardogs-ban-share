@@ -10,6 +10,8 @@ Wardogs 社区服的**联合 ban 名单**。各服管理员用自己服务器专
 > **项目须知：禁止把任何密钥写进仓库。** API key、Cloudflare token、`ADMIN_TOKEN` 只放服务器环境变量或 Workers Secrets。`npm run check:secrets` 会在 CI 里拦截疑似凭据，详见 [SECURITY.md](SECURITY.md)。
 >
 > **接手项目先读 [docs/STATUS.md](docs/STATUS.md)**：当前线上版本、部署配置、未完成项和决策记录都在那里。
+>
+> **接入方的 AI 助手**：让它的第一个请求就是读 [docs/AI-INTEGRATION.md](docs/AI-INTEGRATION.md)（一页纸讲清 key、提交、拉取、reason、本地白名单）。
 
 维护者面板：<https://wardogs.ksroido.art/ban-share> —— 建成员服、发 / 吊销 API key、紧急撤销 ban、看审计。登录用本服务的 `ADMIN_TOKEN`（`?token=` 或登录表单，12 小时 cookie），与 anticheat 的 `/dashboard` token 相互独立。
 
@@ -297,7 +299,7 @@ curl -G https://wardogs.ksroido.art/api/ban-share/v1/players \
 
 1. 用 [服务器申请表](https://github.com/KSroido/wardogs-ban-share/issues/new?template=server-application.yml) 提交 Issue。**管理方**和**服务器地理位置**必填 —— 位置会写进每条 ban 记录，别的服据此判断是不是「外籍服」（`foreignofserverlocation`）。
 2. 维护者审核后，在库里创建服务器并签发密钥：**一个 key 对应「一个管理方 + 一个地理位置」**，同组多台服共用；组里不止一台服时，提交用顶层 `server_id` 指明是哪台。换地理位置要单独发一枚 key。
-3. 密钥**只通过私密渠道**发送一次，不要贴在 Issue 里，也不要提交到仓库。
+3. 密钥由**仓库维护者**审核后私密发放（见 <https://github.com/KSroido/wardogs-ban-share>）；不要贴在 Issue 里，也不要提交到仓库。
 4. 按 [ONBOARDING.md](docs/ONBOARDING.md) 完成接入和首次全量同步。
 
 审核看的是：服务器真实存在、有明确的社区和管理规范、愿意对自己的封禁负责。联盟不替成员服做申诉裁决；每条记录带各服自己的信息，申诉请找封禁你的服。

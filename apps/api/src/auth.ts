@@ -90,8 +90,8 @@ export async function requireApiKey(c: Context<AppEnv>): Promise<AuthContext> {
  * 这条 ban 算哪台服的？
  *
  * - 单服 key：只能是它自己（请求里写了别的 server_id → 403）；
- * - 组 key + 请求里带 server_id：必须是本组（owner+location）里的服；
- * - 组 key + 没带：组里只有一台 → 就是它；多台 → 400 ambiguous_server（不猜）。
+ * - 组 key：**必须**带 server_id，且必须是本组（owner+location）里的服。
+ *   组里只有一台时也不猜 —— 以后加服不会让老客户端静默失效。
  */
 export async function resolveWriteServer(
   db: D1Database,
@@ -119,16 +119,13 @@ export async function resolveWriteServer(
     return asked;
   }
 
-  const rows = await db
-    .prepare(`SELECT id FROM servers WHERE owner = ? AND location = ? AND status = 'active' ORDER BY id`)
-    .bind(auth.owner, auth.location)
-    .all<{ id: string }>();
-  const list = rows.results ?? [];
-  if (list.length === 0) throw new ApiError(403, 'forbidden', "No active server left in this key's group.");
-  if (list.length > 1) {
-    throw new ApiError(400, 'ambiguous_server', 'This key covers several servers; set server_id in the request.');
-  }
-  return list[0]!.id;
+  // 组 key 一律要求显式 server_id：组里现在可能只有一台，但以后会加别人的服，
+  // 让客户端「靠组里只有一台」隐式工作 = 将来静默 400。
+  throw new ApiError(
+    400,
+    'server_id_required',
+    'This key covers an (owner, location) group; set server_id in the request body.',
+  );
 }
 
 /** 读/撤销：这台服归不归本 key 管（组 key 覆盖整组） */

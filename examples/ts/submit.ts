@@ -3,8 +3,9 @@
  *
  *   BANLIST_KEY=wdb_... npx tsx submit.ts
  *
- * The key is bound to your server. The server id is never sent by the client:
- * the Worker derives it from the key, so a leaked key cannot post as someone else.
+ * The key is bound to an (owner, location) group. A group key must name the server
+ * in `server_id`; the API rejects any server outside the key's group, so a leaked
+ * key still cannot post on behalf of another member.
  */
 import { BanListClient, type SubmitBanInput } from '@wardogs/banlist';
 
@@ -34,7 +35,10 @@ const bans: SubmitBanInput[] = [
   },
 ];
 
-const result = await client.submitBans(bans);
+// BANLIST_SERVER_ID = 成员服 id（组 key 必填；单服 key 可省略）
+const result = await client.submitBans(bans, {
+  serverId: process.env.BANLIST_SERVER_ID,
+});
 
 console.log(`created: ${result.created.length}`);
 for (const ban of result.created) {

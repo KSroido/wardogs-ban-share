@@ -77,8 +77,13 @@ class BanListClient:
 
     # ---------------------------------------------------------------- writes
 
-    def submit_bans(self, bans: List[Dict[str, Any]]) -> SubmitBansResult:
-        """Submit up to 100 bans. Larger lists are chunked and merged."""
+    def submit_bans(
+        self, bans: List[Dict[str, Any]], server_id: Optional[str] = None
+    ) -> SubmitBansResult:
+        """Submit up to 100 bans. Larger lists are chunked and merged.
+
+        组 key（一个管理方 + 一个地理位置）**必须**传 ``server_id``：组里可能有多台服。
+        """
         if not bans:
             raise ValueError("submit_bans requires at least one ban")
 
@@ -88,7 +93,10 @@ class BanListClient:
 
         for offset in range(0, len(bans), MAX_SUBMIT_BATCH):
             chunk = bans[offset : offset + MAX_SUBMIT_BATCH]
-            payload = self._request("POST", "/v1/bans", body={"bans": chunk}) or {}
+            body: Dict[str, Any] = {"bans": chunk}
+            if server_id:
+                body["server_id"] = server_id
+            payload = self._request("POST", "/v1/bans", body=body) or {}
 
             created.extend(Ban.from_dict(item) for item in payload.get("created") or [])
 

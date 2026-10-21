@@ -21,6 +21,8 @@ import { parseLocation, parseOwner } from '../validation';
 
 const COOKIE = 'bs_admin';
 const COOKIE_MAX_AGE = 12 * 60 * 60;
+/** 勾了「记住我」给 30 天；浏览器密码管理器保存的是同一个 token，两者互不影响 */
+const COOKIE_REMEMBER_AGE = 30 * 24 * 60 * 60;
 const SESSION_PATH = '/ban-share';
 
 export const panelRoutes = new Hono<AppEnv>();
@@ -37,9 +39,12 @@ panelRoutes.post('/login', async (c) => {
   if (!token || !(await tokenMatches(c, token))) {
     return c.html(loginPage('token 不对（或者服务端没配 ADMIN_TOKEN）'), 401);
   }
+  // 「记住我」→ 30 天持久 cookie；不勾 → 会话 cookie（关浏览器即失效）
+  const remember = body.remember !== undefined;
+  const maxAge = remember ? `; Max-Age=${COOKIE_REMEMBER_AGE}` : '';
   c.header(
     'set-cookie',
-    `${COOKIE}=${encodeURIComponent(token)}; Path=${SESSION_PATH}; HttpOnly; Secure; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}`,
+    `${COOKIE}=${encodeURIComponent(token)}; Path=${SESSION_PATH}; HttpOnly; Secure; SameSite=Lax${maxAge}`,
   );
   return c.redirect(SESSION_PATH, 303);
 });
@@ -311,7 +316,7 @@ function noticeFor(c: Context<AppEnv>): string {
 function loginPage(notice: string): string {
   return layout(
     '登录',
-    `<form class="card" method="post" action="${SESSION_PATH}/login">
+    `<form class="card login" method="post" action="${SESSION_PATH}/login">
        <h2>维护者登录</h2>
        <p class="muted">用联合 Ban 自己的 <code>ADMIN_TOKEN</code> 登录（和 <code>/dashboard</code> 的 token 不是同一个）。</p>
        ${
@@ -319,9 +324,20 @@ function loginPage(notice: string): string {
            ? `<p class="err">${esc(notice)}</p>`
            : ''
        }
-       <input name="token" type="password" placeholder="ADMIN_TOKEN" autocomplete="current-password" autofocus required>
+       <label class="field">
+         <span>用户名</span>
+         <input name="username" type="text" value="maintainer" autocomplete="username" readonly>
+       </label>
+       <label class="field">
+         <span>密码（ADMIN_TOKEN）</span>
+         <input name="token" type="password" placeholder="ADMIN_TOKEN" autocomplete="current-password" autofocus required>
+       </label>
+       <label class="check"><input type="checkbox" name="remember" checked> 记住我（30 天）</label>
        <button type="submit">登录</button>
-       <p class="muted small">也可以直接在地址后面带 <code>?token=…</code>，或者用 <code>Authorization: Bearer …</code> 调 API。</p>
+       <p class="muted small">
+         浏览器会提示「保存密码」——用户名随便，密码就是这串 token，下次自动填。
+         也可以直接在地址后面带 <code>?token=…</code>，或者用 <code>Authorization: Bearer …</code> 调 API。
+       </p>
      </form>`,
   );
 }
@@ -556,6 +572,11 @@ function layout(title: string, body: string): string {
   .toolbar { display: flex; justify-content: space-between; align-items: center; max-width: 1100px; margin-bottom: 16px; }
   input, button { background: #11151c; color: #e6e6e6; border: 1px solid #2a3140; border-radius: 7px;
                   padding: 7px 10px; font: inherit; }
+  form.login { display: flex; flex-direction: column; gap: 10px; max-width: 380px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field > span { color: #9aa4b2; font-size: 12px; }
+  .check { display: flex; align-items: center; gap: 6px; color: #c9d1d9; font-size: 13px; }
+  .check input { padding: 0; }
   input:focus { outline: 2px solid #2f6f4f; outline-offset: -1px; }
   button { cursor: pointer; background: #1d2a22; border-color: #2f6f4f; }
   button:hover { background: #24362b; }

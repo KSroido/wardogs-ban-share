@@ -37,7 +37,12 @@ func main() {
 		},
 	}
 
+	// BANLIST_SERVER_ID = 成员服 id（组 key 必填；单服 key 可省略）
+	serverID := os.Getenv("BANLIST_SERVER_ID")
 	result, err := client.SubmitBans(ctx, bans)
+	if serverID != "" {
+		result, err = client.SubmitBansAs(ctx, serverID, bans)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "submit failed:", err)
 		os.Exit(1)

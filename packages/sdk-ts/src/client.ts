@@ -116,7 +116,10 @@ export class BanListClient {
    * Submit up to 100 bans in one request. Larger arrays are chunked
    * automatically and the per-chunk results are merged.
    */
-  async submitBans(bans: SubmitBanInput[]): Promise<SubmitBansResult> {
+  async submitBans(
+    bans: SubmitBanInput[],
+    options: { serverId?: string } = {},
+  ): Promise<SubmitBansResult> {
     if (!Array.isArray(bans) || bans.length === 0) {
       throw new Error('submitBans: at least one ban is required');
     }
@@ -126,7 +129,8 @@ export class BanListClient {
     for (let offset = 0; offset < bans.length; offset += MAX_SUBMIT_BATCH) {
       const chunk = bans.slice(offset, offset + MAX_SUBMIT_BATCH);
       const result = await this.request<SubmitBansResult>('POST', '/v1/bans', {
-        body: { bans: chunk },
+        // 组 key（一个管理方 + 一个地理位置）必须指明是哪台服
+        body: { bans: chunk, ...(options.serverId ? { server_id: options.serverId } : {}) },
       });
       merged.created.push(...result.created);
       merged.duplicates.push(

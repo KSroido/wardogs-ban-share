@@ -109,7 +109,22 @@ func (c *Client) ReloadWhitelist() (bool, error) {
 // ---------------------------------------------------------------- writes
 
 // SubmitBans submits up to 100 bans, chunking larger slices automatically.
+//
+// A group key (one owner + one location) must name the server: use SubmitBansAs.
 func (c *Client) SubmitBans(ctx context.Context, bans []SubmitBanInput) (*SubmitBansResult, error) {
+	return c.submitBans(ctx, "", bans)
+}
+
+// SubmitBansAs is SubmitBans with an explicit server_id, required when the API key
+// covers a whole (owner, location) group.
+func (c *Client) SubmitBansAs(ctx context.Context, serverID string, bans []SubmitBanInput) (*SubmitBansResult, error) {
+	if serverID == "" {
+		return nil, errors.New("banlist: serverID is required for group keys")
+	}
+	return c.submitBans(ctx, serverID, bans)
+}
+
+func (c *Client) submitBans(ctx context.Context, serverID string, bans []SubmitBanInput) (*SubmitBansResult, error) {
 	if len(bans) == 0 {
 		return nil, errors.New("banlist: at least one ban is required")
 	}
@@ -128,6 +143,9 @@ func (c *Client) SubmitBans(ctx context.Context, bans []SubmitBanInput) (*Submit
 
 		var page SubmitBansResult
 		body := map[string]any{"bans": bans[offset:end]}
+		if serverID != "" {
+			body["server_id"] = serverID
+		}
 		if err := c.request(ctx, http.MethodPost, "/v1/bans", nil, body, &page); err != nil {
 			return nil, err
 		}

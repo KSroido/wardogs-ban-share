@@ -3,8 +3,8 @@
 
     BANLIST_KEY=wdb_... python examples/python/submit.py
 
-The key is bound to your server. The Worker derives the server id from the key,
-so a leaked key can never post on behalf of another member.
+The key is bound to an (owner, location) group, so a group key must name the server
+in ``server_id``; the API rejects servers outside the key's group.
 """
 
 import os
@@ -48,7 +48,8 @@ def main() -> int:
         },
     ]
 
-    result = client.submit_bans(bans)
+    # BANLIST_SERVER_ID = 成员服 id（组 key 必填；单服 key 可省略）
+    result = client.submit_bans(bans, server_id=os.environ.get("BANLIST_SERVER_ID"))
 
     print("created: %d" % len(result.created))
     for ban in result.created:

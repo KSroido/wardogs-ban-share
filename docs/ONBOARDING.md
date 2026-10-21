@@ -19,7 +19,9 @@
 | 管理规范 | 你们的封禁标准、申诉渠道；有链接最好 |
 | 申请理由 | 为什么需要联合名单，能提供什么 |
 
-**不要在 Issue 里贴 API key、密码、token。** key 是审核通过后由维护者单独下发的。
+**不要在 Issue 里贴 API key、密码、token。** key 由仓库维护者（<https://github.com/KSroido/wardogs-ban-share>）审核通过后私密下发。
+
+> 用 AI 助手接入？直接把 [AI-INTEGRATION.md](AI-INTEGRATION.md) 丢给它，里面有完整的字段表、错误码和示例。
 
 ## 2. 审核
 

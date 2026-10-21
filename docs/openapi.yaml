@@ -104,6 +104,12 @@ paths:
               type: object
               required: [bans]
               properties:
+                server_id:
+                  type: string
+                  description: >-
+                    Member server id. **Required for group keys** (one owner + one location
+                    covering several servers); a single-server key may omit it. Servers
+                    outside the key's group are rejected with 403.
                 bans:
                   type: array
                   minItems: 1
