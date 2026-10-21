@@ -64,7 +64,7 @@ app.get(API_PREFIX, (c) =>
       'chattroll',
       'gametroll',
       'racism',
-      'foreigner',
+      'foreignofserverlocation',
       'steamrisk',
       'ownreason',
     ],

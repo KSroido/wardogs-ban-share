@@ -42,7 +42,7 @@ Wardogs 社区服的**联合 ban 名单**。各服管理员用自己服务器专
 
 1. **密钥即身份**：密钥绑定到一个服务器，提交时不需要（也不允许）声明“我是谁”。泄露的密钥无法冒充别的服。
 2. **记录只增不改**：解封是软删除（`revoked`），增量同步能拉到“这条已经撤销”，而不是永远看不到。
-3. **列表是情报，不是判决**：`foreigner`、`steamrisk` 这类推断性标签默认只做提示；每个服的封禁独立展示，由接入方自己决定是否踢人。
+3. **列表是情报，不是判决**：`foreignofserverlocation`、`steamrisk` 这类推断性标签默认只做提示；每个服的封禁独立展示，由接入方自己决定是否踢人。
 
 ## 功能
 
@@ -194,7 +194,7 @@ curl -X POST https://wardogs.ksroido.art/api/ban-share/v1/bans \
 | `chattroll` | 聊天辱骂、刷屏 | |
 | `gametroll` | 恶意游戏行为（TK、堵门等） | |
 | `racism` | 种族歧视言论 | |
-| `foreigner` | 非目标语言/地区玩家 | **推断性标签**，误伤率高，客户端默认只提示 |
+| `foreignofserverlocation` | 非目标语言/地区玩家（外籍服） | **推断性标签**，误伤率高，客户端默认只提示 |
 | `steamrisk` | Steam 账号风险（小号、被盗等） | **推断性标签**，不能单独作为封禁依据 |
 | `ownreason` | 其他 | `note` 必填 |
 
@@ -363,7 +363,7 @@ docs/                API、部署、接入、路线图、OpenAPI
 - `player_stats` 是最终一致的读模型；写入时会同步刷新该玩家，异常时靠每日重建修复。
 - 不支持修改已提交的 ban（改判 = 撤销旧记录 + 提交新记录）。
 - 证据只存 URL，联盟不托管文件，链接失效需原服务器自行维护。
-- `foreigner` / `steamrisk` 属于主观判断，接入方应自行决定是否自动执行。
+- `foreignofserverlocation` / `steamrisk` 属于主观判断，接入方应自行决定是否自动执行。
 
 ## License
 

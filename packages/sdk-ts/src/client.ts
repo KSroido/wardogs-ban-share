@@ -1,4 +1,6 @@
 import { BanListError } from './errors.js';
+import { Whitelist } from './whitelist.js';
+import type { SteamIdPartition, WhitelistInput } from './whitelist.js';
 import type {
   Ban,
   ErrorEnvelope,
@@ -10,6 +12,7 @@ import type {
   ListServersResult,
   ListStatus,
   PlayerDetail,
+  PlayerReports,
   Server,
   SubmitBanDuplicate,
   SubmitBanError,
@@ -32,6 +35,11 @@ export interface BanListClientOptions {
   retries?: number;
   /** Sent as User-Agent so the maintainers can see which SDKs are in use. */
   userAgent?: string;
+  /**
+   * 本地白名单：数组 / Set，或文件路径（JSON 数组或每行一个，`#` 开头为注释）。
+   * 命中白名单的玩家在发请求前直接返回本地结果，详见 `Whitelist`。
+   */
+  whitelist?: WhitelistInput;
 }
 
 interface RequestOptions {
@@ -50,6 +58,8 @@ export class BanListClient {
   private readonly timeoutMs: number;
   private readonly retries: number;
   private readonly userAgent: string;
+  /** 本地白名单：命中者在发请求前直接返回本地结果。 */
+  private readonly whitelist: Whitelist;
 
   constructor(options: BanListClientOptions) {
     if (!options || typeof options.baseUrl !== 'string' || options.baseUrl.length === 0) {
@@ -70,6 +80,34 @@ export class BanListClient {
     this.timeoutMs = options.timeoutMs ?? 15_000;
     this.retries = Math.max(0, options.retries ?? 2);
     this.userAgent = options.userAgent ?? 'wardogs-banlist-ts/0.1.0';
+    this.whitelist = new Whitelist(options.whitelist);
+  }
+
+  // ------------------------------------------------------------- whitelist
+
+  /** 是否命中本地白名单。纯内存判断，不发请求。 */
+  isWhitelisted(steamId: string): boolean {
+    return this.whitelist.has(steamId);
+  }
+
+  /** 白名单条目数，便于确认 `reloadWhitelist()` 是否生效。 */
+  get whitelistSize(): number {
+    return this.whitelist.size;
+  }
+
+  /** 去重、保序地划分一批 SteamID64：命中白名单的 / 仍需查询的。 */
+  partitionSteamIds(steamIds: Iterable<string>): SteamIdPartition {
+    return this.whitelist.partition(steamIds);
+  }
+
+  /** 热加载：重新读取构造时传入的白名单文件。内存列表返回 false。 */
+  reloadWhitelist(): boolean {
+    return this.whitelist.reload();
+  }
+
+  /** 热替换内存白名单（不影响文件来源，之后仍可再 `reloadWhitelist()`）。 */
+  setWhitelist(steamIds: Iterable<string>): void {
+    this.whitelist.set(steamIds);
   }
 
   // ---------------------------------------------------------------- writes
@@ -150,12 +188,36 @@ export class BanListClient {
 
   async listBans(query: ListBansQuery = {}): Promise<ListBansResult> {
     const limit = query.limit ?? 100;
+    const filtered = this.filterWhitelistedIds(query.steam_id);
+    if (filtered === null) return emptyBansPage();
+
     return this.request<ListBansResult>('GET', '/v1/bans', {
       query: {
         ...query,
+        steam_id: filtered,
         limit: Math.min(Math.max(1, limit), MAX_PAGE_SIZE),
       },
     });
+  }
+
+  /**
+   * 从 `steam_id` 过滤条件里剔除白名单玩家。
+   *
+   * 返回 `null` 表示“整批都命中白名单”——调用方直接返回本地空页，不发请求
+   * （不能把空数组拼进查询串，否则服务端会当成“不过滤”返回全部记录）。
+   */
+  private filterWhitelistedIds(
+    value: string | string[] | undefined,
+  ): string | string[] | undefined | null {
+    if (value === undefined) return undefined;
+
+    const list = Array.isArray(value) ? value : [value];
+    if (list.length === 0) return value;
+
+    const { others } = this.whitelist.partition(list);
+    if (others.length === 0) return null;
+    if (!Array.isArray(value)) return others[0];
+    return others.length === list.length ? value : others;
   }
 
   /**
@@ -176,7 +238,8 @@ export class BanListClient {
 
   /** Look up active bans for specific players. Chunks into 50 per request. */
   async lookupSteamIds(steamIds: string[]): Promise<Ban[]> {
-    const unique = [...new Set(steamIds)];
+    // 白名单玩家不参与查询：整批命中时一次 HTTP 都不会发生。
+    const { others: unique } = this.whitelist.partition(steamIds);
     const found: Ban[] = [];
 
     for (let offset = 0; offset < unique.length; offset += MAX_STEAM_ID_LOOKUP) {
@@ -200,9 +263,18 @@ export class BanListClient {
     if (!/^7656119\d{10}$/.test(steamId)) {
       throw new Error(`getPlayer: "${steamId}" is not a SteamID64`);
     }
-    return this.request<PlayerDetail>('GET', `/v1/players/${encodeURIComponent(steamId)}`, {
-      query: { status: query.status ?? 'active', limit: query.limit ?? 200 },
-    });
+
+    // 命中白名单：本地结果，0 次 HTTP。不伪造 ban，只标 whitelisted。
+    if (this.whitelist.has(steamId)) {
+      return whitelistedPlayerDetail(steamId);
+    }
+
+    const detail = await this.request<Omit<PlayerDetail, 'whitelisted'> & { whitelisted?: boolean }>(
+      'GET',
+      `/v1/players/${encodeURIComponent(steamId)}`,
+      { query: { status: query.status ?? 'active', limit: query.limit ?? 200 } },
+    );
+    return { ...detail, whitelisted: detail.whitelisted ?? false };
   }
 
   /** Players ranked by how many servers reported them (read model only). */
@@ -303,6 +375,41 @@ export class BanListClient {
       details: lastError,
     });
   }
+}
+
+/**
+ * 白名单玩家的本地详情：`whitelisted: true`，reports 全零，`bans` 为空数组。
+ * 这些数字是“本地未做任何查询”的占位，不是服务端数据。
+ */
+function whitelistedPlayerDetail(steamId: string): PlayerDetail {
+  return {
+    steam_id: steamId,
+    whitelisted: true,
+    reports: {
+      steam_id: steamId,
+      server_count: 0,
+      active_server_count: 0,
+      ban_count: 0,
+      active_ban_count: 0,
+      permanent_count: 0,
+      reason_counts: {},
+      first_reported_at: null,
+      last_reported_at: null,
+      // 本地时钟，非服务端时间
+      updated_at: new Date().toISOString(),
+    } satisfies PlayerReports,
+    bans: [],
+  };
+}
+
+/** 整批过滤条件都命中白名单时返回的本地空页（`server_time` 为本地时钟）。 */
+function emptyBansPage(): ListBansResult {
+  return {
+    data: [],
+    next_cursor: null,
+    has_more: false,
+    server_time: new Date().toISOString(),
+  };
 }
 
 function parseJson(text: string): unknown {

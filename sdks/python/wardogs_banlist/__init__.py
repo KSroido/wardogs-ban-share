@@ -22,6 +22,7 @@ from .models import (
     ServerRef,
     SubmitBansResult,
 )
+from .whitelist import SteamIdPartition, Whitelist, parse_whitelist_text
 
 __all__ = [
     "BAN_REASONS",
@@ -34,7 +35,10 @@ __all__ = [
     "PlayerReports",
     "Server",
     "ServerRef",
+    "SteamIdPartition",
     "SubmitBansResult",
+    "Whitelist",
+    "parse_whitelist_text",
 ]
 
 __version__ = "0.1.0"

@@ -11,7 +11,7 @@ BAN_REASONS = (
     "chattroll",
     "gametroll",
     "racism",
-    "foreigner",
+    "foreignofserverlocation",
     "steamrisk",
     "ownreason",
 )
@@ -155,6 +155,9 @@ class PlayerDetail:
     steam_id: str
     reports: PlayerReports
     bans: List[Ban]
+    # 命中本地白名单时为 True：这是 SDK 本地结果，没有查询服务端，
+    # reports 全零、bans 为空。服务端响应里没有这个字段，默认 False。
+    whitelisted: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PlayerDetail":
@@ -162,6 +165,7 @@ class PlayerDetail:
             steam_id=str(data.get("steam_id", "")),
             reports=PlayerReports.from_dict(data.get("reports") or {}),
             bans=[Ban.from_dict(item) for item in data.get("bans") or []],
+            whitelisted=bool(data.get("whitelisted")),
         )
 
 

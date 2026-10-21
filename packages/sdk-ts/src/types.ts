@@ -17,7 +17,7 @@ export const BAN_REASONS = [
   'chattroll',
   'gametroll',
   'racism',
-  'foreigner',
+  'foreignofserverlocation',
   'steamrisk',
   'ownreason',
 ] as const;
@@ -171,6 +171,11 @@ export interface PlayerDetail {
   reports: PlayerReports;
   /** Newest first. `reports` is the same aggregate repeated on every ban. */
   bans: Ban[];
+  /**
+   * 命中本地白名单时为 `true`：这是 SDK 本地结果，没有查询服务端，
+   * `reports` 全零、`bans` 为空。服务端响应里没有这个字段，默认 `false`。
+   */
+  whitelisted: boolean;
 }
 
 export type PlayerSort = 'servers' | 'active_servers' | 'bans' | 'active_bans' | 'last_reported_at';

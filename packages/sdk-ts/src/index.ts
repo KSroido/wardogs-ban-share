@@ -2,6 +2,8 @@ export { BanListClient } from './client.js';
 export type { BanListClientOptions } from './client.js';
 export { BanListError } from './errors.js';
 export type { BanListErrorOptions } from './errors.js';
+export { Whitelist, parseWhitelistText } from './whitelist.js';
+export type { SteamIdPartition, WhitelistInput } from './whitelist.js';
 export { BAN_REASONS } from './types.js';
 export type {
   Ban,

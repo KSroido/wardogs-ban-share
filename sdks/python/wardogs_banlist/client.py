@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Union
 from urllib import error as urlerror
 from urllib import parse, request
 
@@ -13,9 +14,11 @@ from .models import (
     ListBansResult,
     ListPlayersResult,
     PlayerDetail,
+    PlayerReports,
     Server,
     SubmitBansResult,
 )
+from .whitelist import SteamIdPartition, Whitelist
 
 MAX_SUBMIT_BATCH = 100
 MAX_STEAM_ID_LOOKUP = 50
@@ -33,6 +36,7 @@ class BanListClient:
         timeout: float = 15.0,
         retries: int = 2,
         user_agent: str = "wardogs-banlist-python/0.1.0",
+        whitelist: Optional[Union[str, Iterable[str]]] = None,
     ) -> None:
         if not base_url:
             raise ValueError("base_url is required")
@@ -44,6 +48,32 @@ class BanListClient:
         self.timeout = timeout
         self.retries = max(0, retries)
         self.user_agent = user_agent
+        # 本地白名单：命中者在发请求前直接返回本地结果。
+        # 传字符串 = 文件路径；传列表 / set = 内存名单。
+        self.whitelist = Whitelist(whitelist)
+
+    # ------------------------------------------------------------- whitelist
+
+    def is_whitelisted(self, steam_id: str) -> bool:
+        """是否命中本地白名单。纯内存判断，不发请求。"""
+        return self.whitelist.has(steam_id)
+
+    @property
+    def whitelist_size(self) -> int:
+        """白名单条目数，便于确认 :meth:`reload_whitelist` 是否生效。"""
+        return self.whitelist.size
+
+    def partition_steam_ids(self, steam_ids: Iterable[str]) -> SteamIdPartition:
+        """去重、保序地划分一批 SteamID64：命中白名单的 / 仍需查询的。"""
+        return self.whitelist.partition(steam_ids)
+
+    def reload_whitelist(self) -> bool:
+        """热加载：重新读取构造时传入的白名单文件。内存列表返回 ``False``。"""
+        return self.whitelist.reload()
+
+    def set_whitelist(self, steam_ids: Iterable[str]) -> None:
+        """热替换内存白名单（不影响文件来源，之后仍可再 reload）。"""
+        self.whitelist.set(steam_ids)
 
     # ---------------------------------------------------------------- writes
 
@@ -115,8 +145,37 @@ class BanListClient:
         """One page. Pass `status="all"` to see revocations and expiries."""
         limit = int(query.pop("limit", 100) or 100)
         query["limit"] = min(max(limit, 1), MAX_PAGE_SIZE)
+
+        if "steam_id" in query:
+            filtered = self._filter_whitelisted_ids(query["steam_id"])
+            if filtered is None:
+                # 整批都命中白名单：本地空页，不发请求
+                return ListBansResult(
+                    data=[], next_cursor=None, has_more=False, server_time=_local_timestamp()
+                )
+            query["steam_id"] = filtered
+
         payload = self._request("GET", "/v1/bans", query=query) or {}
         return ListBansResult.from_dict(payload)
+
+    def _filter_whitelisted_ids(self, value: Any) -> Any:
+        """从 ``steam_id`` 过滤条件里剔除白名单玩家。
+
+        返回 ``None`` 表示整批都命中白名单，调用方应直接返回本地空页（不能把
+        空列表拼进查询串，否则服务端会当成“不过滤”返回全部记录）。
+        """
+        items = list(value) if isinstance(value, (list, tuple)) else [value]
+        if not items:
+            return value
+
+        parts = self.whitelist.partition(items)
+        if not parts.others:
+            return None
+        if not isinstance(value, (list, tuple)):
+            return parts.others[0]
+        if len(parts.others) == len(items):
+            return value
+        return parts.others
 
     def iter_bans(self, **query: Any) -> Iterator[Ban]:
         """Iterate every matching ban, following next_cursor automatically."""
@@ -131,8 +190,11 @@ class BanListClient:
             cursor = page.next_cursor
 
     def lookup_steam_ids(self, steam_ids: Iterable[str]) -> List[Ban]:
-        """Active bans for a set of players, 50 ids per request."""
-        unique = list(dict.fromkeys(steam_ids))
+        """Active bans for a set of players, 50 ids per request.
+
+        白名单玩家不参与查询：整批命中时一次 HTTP 都不会发生。
+        """
+        unique = self.whitelist.partition(steam_ids).others
         found: List[Ban] = []
 
         for offset in range(0, len(unique), MAX_STEAM_ID_LOOKUP):
@@ -145,6 +207,10 @@ class BanListClient:
         """Aggregate plus every ban record for one player."""
         if not STEAM_ID_PATTERN.match(steam_id):
             raise ValueError("%r is not a SteamID64" % steam_id)
+
+        # 命中白名单：本地结果，0 次 HTTP。不伪造 ban，只标 whitelisted。
+        if self.whitelist.has(steam_id):
+            return _whitelisted_player_detail(steam_id)
 
         payload = self._request(
             "GET",
@@ -236,6 +302,35 @@ class BanListClient:
         raise BanListError(
             0, "network_error", "Request to %s failed: %s" % (path, last_error)
         ) from last_error
+
+
+def _local_timestamp() -> str:
+    """本地时钟的 ISO 8601 UTC 时间戳（不是服务端时间）。"""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _whitelisted_player_detail(steam_id: str) -> PlayerDetail:
+    """白名单玩家的本地详情：``whitelisted=True``，reports 全零，``bans`` 为空。
+
+    这些数字表示“本地没有做过任何查询”，不是服务端数据。
+    """
+    return PlayerDetail(
+        steam_id=steam_id,
+        reports=PlayerReports(
+            steam_id=steam_id,
+            server_count=0,
+            active_server_count=0,
+            ban_count=0,
+            active_ban_count=0,
+            permanent_count=0,
+            reason_counts={},
+            first_reported_at=None,
+            last_reported_at=None,
+            updated_at=_local_timestamp(),
+        ),
+        bans=[],
+        whitelisted=True,
+    )
 
 
 def _parse_json(text: str) -> Any:

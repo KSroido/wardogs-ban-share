@@ -11,7 +11,9 @@ const (
 	ReasonChatTroll Reason = "chattroll"
 	ReasonGameTroll Reason = "gametroll"
 	ReasonRacism    Reason = "racism"
-	ReasonForeigner Reason = "foreigner"
+	ReasonForeignOfServerLocation Reason = "foreignofserverlocation"
+	// ReasonForeigner is the pre-0.2 name of ReasonForeignOfServerLocation; deprecated.
+	ReasonForeigner Reason = ReasonForeignOfServerLocation
 	ReasonSteamRisk Reason = "steamrisk"
 	ReasonOwnReason Reason = "ownreason"
 )
@@ -143,6 +145,9 @@ type PlayerDetail struct {
 	SteamID string        `json:"steam_id"`
 	Reports PlayerReports `json:"reports"`
 	Bans    []Ban         `json:"bans"`
+	// Whitelisted 为 true 时表示这是 SDK 的本地结果：命中本地白名单，
+	// 没有查询服务端，Reports 全零、Bans 为空。服务端响应没有这个字段。
+	Whitelisted bool `json:"whitelisted"`
 }
 
 type ListPlayersResult struct {

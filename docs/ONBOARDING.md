@@ -163,7 +163,7 @@ curl "$BANLIST_URL/v1/players/76561198000000001" \
 | 2–3 | 进服观察 / 限制白名单 |
 | ≥4 | 直接拒绝，除非有本地申诉 |
 
-不要仅凭 `foreigner` / `steamrisk` 标签自动封禁；它们误伤率高。
+不要仅凭 `foreignofserverlocation` / `steamrisk` 标签自动封禁；它们误伤率高。
 
 ## 7. 提交你们服的封禁
 

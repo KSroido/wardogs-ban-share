@@ -34,6 +34,8 @@ type Client struct {
 	UserAgent  string
 	// Retries applies to 429 and 5xx responses, plus transport errors.
 	Retries int
+	// 本地白名单：命中者在发请求前直接返回本地结果。未设置时视为空名单。
+	whitelist *Whitelist
 }
 
 func New(baseURL, apiKey string) *Client {
@@ -43,7 +45,65 @@ func New(baseURL, apiKey string) *Client {
 		HTTPClient: &http.Client{Timeout: defaultHTTPTimeout},
 		UserAgent:  defaultUserAgent,
 		Retries:    2,
+		whitelist:  &Whitelist{},
 	}
+}
+
+// NewWithWhitelist 用内存名单构造客户端：命中者在发请求前直接返回本地结果。
+func NewWithWhitelist(baseURL, apiKey string, steamIDs []string) *Client {
+	client := New(baseURL, apiKey)
+	client.whitelist = NewWhitelist(steamIDs)
+	return client
+}
+
+// NewWithWhitelistFile 从文件构造客户端。文件格式见 whitelist.go。
+// 读取或解析失败时返回 error。
+func NewWithWhitelistFile(baseURL, apiKey, path string) (*Client, error) {
+	whitelist, err := NewWhitelistFromFile(path)
+	if err != nil {
+		return nil, err
+	}
+	client := New(baseURL, apiKey)
+	client.whitelist = whitelist
+	return client, nil
+}
+
+// ------------------------------------------------------------- whitelist
+
+// IsWhitelisted 判断是否命中本地白名单。纯内存判断，不发请求。
+func (c *Client) IsWhitelisted(steamID string) bool {
+	return c.whitelist.Has(steamID)
+}
+
+// WhitelistSize 是白名单条目数，便于确认 ReloadWhitelist 是否生效。
+func (c *Client) WhitelistSize() int {
+	return c.whitelist.Size()
+}
+
+// PartitionSteamIDs 去重、保序地划分一批 SteamID64。
+func (c *Client) PartitionSteamIDs(steamIDs []string) SteamIDPartition {
+	return c.whitelist.Partition(steamIDs)
+}
+
+// SetWhitelist 热替换内存名单（不会改动文件来源）。
+func (c *Client) SetWhitelist(steamIDs []string) {
+	if c.whitelist == nil {
+		c.whitelist = &Whitelist{}
+	}
+	c.whitelist.Set(steamIDs)
+}
+
+// LoadWhitelistFile 热加载：读入文件并记作后续 ReloadWhitelist 的来源。
+func (c *Client) LoadWhitelistFile(path string) error {
+	if c.whitelist == nil {
+		c.whitelist = &Whitelist{}
+	}
+	return c.whitelist.LoadFile(path)
+}
+
+// ReloadWhitelist 重新读取文件。没有文件来源时返回 (false, nil)。
+func (c *Client) ReloadWhitelist() (bool, error) {
+	return c.whitelist.Reload()
 }
 
 // ---------------------------------------------------------------- writes
@@ -136,6 +196,20 @@ func (c *Client) RevokeBan(ctx context.Context, banID, reason string) (*Ban, err
 // ----------------------------------------------------------------- reads
 
 func (c *Client) ListBans(ctx context.Context, query ListBansQuery) (*ListBansResult, error) {
+	if len(query.SteamIDs) > 0 {
+		parts := c.whitelist.Partition(query.SteamIDs)
+		if len(parts.Others) == 0 {
+			// 整批都命中白名单：本地空页，不发请求（空过滤串会让服务端返回全部记录）
+			return &ListBansResult{
+				Data:       []Ban{},
+				NextCursor: nil,
+				HasMore:    false,
+				ServerTime: localTimestamp(),
+			}, nil
+		}
+		query.SteamIDs = parts.Others
+	}
+
 	var result ListBansResult
 	if err := c.request(ctx, http.MethodGet, "/v1/bans", query.values(), nil, &result); err != nil {
 		return nil, err
@@ -168,16 +242,9 @@ func (c *Client) ForEachBan(ctx context.Context, query ListBansQuery, fn func(Ba
 }
 
 // LookupSteamIDs returns active bans for a set of players.
+// 白名单玩家不参与查询：整批命中时一次 HTTP 都不会发生。
 func (c *Client) LookupSteamIDs(ctx context.Context, steamIDs []string) ([]Ban, error) {
-	unique := make([]string, 0, len(steamIDs))
-	seen := make(map[string]struct{}, len(steamIDs))
-	for _, id := range steamIDs {
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		unique = append(unique, id)
-	}
+	unique := c.whitelist.Partition(steamIDs).Others
 
 	found := make([]Ban, 0)
 	for offset := 0; offset < len(unique); offset += maxSteamIDLookup {
@@ -201,6 +268,10 @@ func (c *Client) LookupSteamIDs(ctx context.Context, steamIDs []string) ([]Ban, 
 func (c *Client) GetPlayer(ctx context.Context, steamID, status string, limit int) (*PlayerDetail, error) {
 	if !steamIDPattern.MatchString(steamID) {
 		return nil, fmt.Errorf("banlist: %q is not a SteamID64", steamID)
+	}
+	// 命中白名单：本地结果，0 次 HTTP。不伪造 ban，只标 Whitelisted。
+	if c.whitelist.Has(steamID) {
+		return whitelistedPlayerDetail(steamID), nil
 	}
 	if status == "" {
 		status = "all"
@@ -269,6 +340,26 @@ func (c *Client) Health(ctx context.Context) (*Health, error) {
 }
 
 // ------------------------------------------------------------- internals
+
+// localTimestamp 是本地时钟的 RFC 3339 时间戳（不是服务端时间）。
+func localTimestamp() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
+// whitelistedPlayerDetail 是白名单玩家的本地详情：Whitelisted 为 true，
+// Reports 全零，Bans 为空。这些数字表示“本地没有做过任何查询”，不是服务端数据。
+func whitelistedPlayerDetail(steamID string) *PlayerDetail {
+	return &PlayerDetail{
+		SteamID:     steamID,
+		Whitelisted: true,
+		Reports: PlayerReports{
+			SteamID:      steamID,
+			ReasonCounts: map[Reason]int{},
+			UpdatedAt:    localTimestamp(),
+		},
+		Bans: []Ban{},
+	}
+}
 
 func (q ListBansQuery) values() url.Values {
 	values := url.Values{}
