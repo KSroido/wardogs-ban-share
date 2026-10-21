@@ -27,3 +27,9 @@ bin/
 .DS_Store
 Thumbs.db
 *.log
+
+# opencode 对话历史快照（Hermes 导入，本地资料，不入库）
+opencode-history/
+
+# opencode 单会话导出快照（`opencode session export` 产物，与 raw/ 重复，本地留档）
+/worker.json

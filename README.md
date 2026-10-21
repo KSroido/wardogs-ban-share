@@ -8,6 +8,8 @@ Wardogs 社区服的**联合 ban 名单**。各服管理员用自己服务器专
 - 线上地址：`https://wardogs.ksroido.art/api/ban-share`
 
 > **项目须知：禁止把任何密钥写进仓库。** API key、Cloudflare token、`ADMIN_TOKEN` 只放服务器环境变量或 Workers Secrets。`npm run check:secrets` 会在 CI 里拦截疑似凭据，详见 [SECURITY.md](SECURITY.md)。
+>
+> **接手项目先读 [docs/STATUS.md](docs/STATUS.md)**：当前线上版本、部署配置、未完成项和决策记录都在那里。
 
 ---
 
