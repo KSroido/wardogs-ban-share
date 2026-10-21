@@ -76,7 +76,9 @@ app.route(`${API_PREFIX}/v1/players`, playersRoutes);
 app.route(`${API_PREFIX}/v1/servers`, serversRoutes);
 app.route(`${API_PREFIX}/admin`, adminRoutes);
 // 维护者面板：https://wardogs.ksroido.art/ban-share（同一个 ADMIN_TOKEN）
+// 同时挂 '/ban-share/'：带尾斜杠的请求也进得来（通配符路由下它会到 Worker 这里）
 app.route('/ban-share', panelRoutes);
+app.route('/ban-share/', panelRoutes);
 
 app.notFound((c) =>
   c.json(

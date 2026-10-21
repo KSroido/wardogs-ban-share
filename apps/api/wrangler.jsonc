@@ -16,12 +16,10 @@
       "pattern": "wardogs.ksroido.art/api/ban-share/*",
       "zone_name": "ksroido.art"
     },
+    // 用通配符：这个 zone 上还有 anticheat 的 custom domain，精确 pattern 带 query
+    // 时会落到那个 Worker（实测 /ban-share?token=… → 404）。通配符不受影响。
     {
-      "pattern": "wardogs.ksroido.art/ban-share",
-      "zone_name": "ksroido.art"
-    },
-    {
-      "pattern": "wardogs.ksroido.art/ban-share/*",
+      "pattern": "wardogs.ksroido.art/ban-share*",
       "zone_name": "ksroido.art"
     }
   ],
