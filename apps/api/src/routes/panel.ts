@@ -173,6 +173,50 @@ panelRoutes.post('/keys', async (c) => {
   return c.html(issuedPage(server.name, scopeText, key, scopes, label), 201);
 });
 
+/** 改管理方 / 地理位置：建服时填错、或管理方转移时用；组 key 跟着 (owner, location) 走，无需重发 */
+panelRoutes.post('/servers/update', async (c) => {
+  if (!(await isAdmin(c))) return c.html(loginPage('登录已过期，请重新登录'), 401);
+
+  const body = await c.req.parseBody();
+  const id = str(body.server_id).trim();
+  if (!id) return c.html(await dashboardPage(c, '缺服务器 id'), 400);
+
+  let owner: string;
+  let location: string;
+  try {
+    owner = parseOwner(str(body.owner));
+    location = parseLocation(str(body.location));
+  } catch (error) {
+    return c.html(await dashboardPage(c, `管理方/位置不合法：${esc((error as Error).message)}`), 400);
+  }
+
+  const row = await c.env.DB.prepare('SELECT id, owner, location FROM servers WHERE id = ?')
+    .bind(id)
+    .first<{ id: string; owner: string | null; location: string | null }>();
+  if (!row) return c.html(await dashboardPage(c, '没有这个服务器'), 404);
+  if (row.owner === owner && row.location === location) {
+    return c.html(await dashboardPage(c, '管理方/位置没变'), 200);
+  }
+
+  const nowIso = new Date().toISOString();
+  await c.env.DB.prepare('UPDATE servers SET owner = ?, location = ?, updated_at = ? WHERE id = ?')
+    .bind(owner, location, nowIso, id)
+    .run();
+
+  await logAudit(c.env.DB, {
+    actorType: 'admin',
+    actorId: 'panel',
+    action: 'server.group_update',
+    target: id,
+    detail: { from: { owner: row.owner, location: row.location }, to: { owner, location } },
+  });
+
+  return c.html(
+    await dashboardPage(c, `已更新 ${esc(id)}：管理方=${esc(owner)}，位置=${esc(location)}（组 key 自动跟着走）`),
+    200,
+  );
+});
+
 panelRoutes.post('/keys/revoke', async (c) => {
   if (!(await isAdmin(c))) return c.html(loginPage('登录已过期，请重新登录'), 401);
 
@@ -338,6 +382,17 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
               : '<span class="muted">—</span>'
           }
         </td>
+        <td>
+          <details>
+            <summary>改组</summary>
+            <form class="inline" method="post" action="${SESSION_PATH}/servers/update">
+              <input type="hidden" name="server_id" value="${esc(s.id)}">
+              <input name="owner" value="${esc(s.owner ?? '')}" placeholder="管理方" size="10" required>
+              <input name="location" value="${esc(s.location ?? '')}" placeholder="位置" size="8" required>
+              <button type="submit">保存</button>
+            </form>
+          </details>
+        </td>
       </tr>`,
     )
     .join('');
@@ -427,8 +482,8 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
      <section class="card">
        <h2>成员服</h2>
        <table>
-         <thead><tr><th>id</th><th>名字</th><th>位置</th><th>管理方</th><th>状态</th><th>有效 key</th><th>ban 数</th><th>发 key</th></tr></thead>
-         <tbody>${serverRows || `<tr><td colspan="8" class="muted">还没有成员服</td></tr>`}</tbody>
+         <thead><tr><th>id</th><th>名字</th><th>位置</th><th>管理方</th><th>状态</th><th>有效 key</th><th>ban 数</th><th>发 key</th><th>改组</th></tr></thead>
+         <tbody>${serverRows || `<tr><td colspan="9" class="muted">还没有成员服</td></tr>`}</tbody>
        </table>
      </section>
 
