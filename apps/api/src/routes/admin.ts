@@ -8,7 +8,7 @@ import { asRecord, readJson, readOptionalJson } from '../http';
 import { newId } from '../ids';
 import { emptyReports, loadBan } from '../mappers';
 import { loadReports, refreshPlayer, reindexAll } from '../stats';
-import { parseServerId, parseSteamId } from '../validation';
+import { parseLocation, parseOwner, parseServerId, parseSteamId } from '../validation';
 
 export const adminRoutes = new Hono<AppEnv>();
 
@@ -22,11 +22,14 @@ adminRoutes.post('/servers', async (c) => {
   const body = asRecord(await readJson(c));
   const name = requireString(body.name, 'name', 2, 64);
   const note = optionalString(body.note, 'note', 500);
+  // 接入申请必填：服务器地理位置。management 方的 owner 不填就当「这台服自己一个管理方」。
+  const location = parseLocation(body.location);
   const requestedId =
     body.id === undefined || body.id === null ? null : parseServerId(String(body.id), 'id');
 
   const db = c.env.DB;
   const id = requestedId ? requestedId : await allocateServerId(db, slugify(name));
+  const owner = body.owner === undefined || body.owner === null ? id : parseOwner(body.owner);
 
   if (requestedId) {
     const exists = await db.prepare('SELECT 1 AS x FROM servers WHERE id = ?').bind(requestedId).first();
@@ -36,19 +39,20 @@ adminRoutes.post('/servers', async (c) => {
   const nowIso = new Date().toISOString();
 
   await db.prepare(
-    `INSERT INTO servers (id, name, status, note, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?)`,
+    `INSERT INTO servers (id, name, owner, location, status, note, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
   )
-    .bind(id, name, note, nowIso, nowIso)
+    .bind(id, name, owner, location, note, nowIso, nowIso)
     .run();
 
   await logAudit(db, { actorType: 'admin', actorId: 'admin', action: 'server.create', target: id, detail: { name } });
 
-  return c.json({ id, name, status: 'active', note, created_at: nowIso }, 201);
+  return c.json({ id, name, owner, location, status: 'active', note, created_at: nowIso }, 201);
 });
 
 adminRoutes.get('/servers', async (c) => {
   const result = await c.env.DB.prepare(
-    `SELECT s.id, s.name, s.status, s.note, s.created_at,
+    `SELECT s.id, s.name, s.owner, s.location, s.status, s.note, s.created_at,
             (SELECT COUNT(*) FROM api_keys k WHERE k.server_id = s.id AND k.revoked_at IS NULL) AS active_keys,
             (SELECT COUNT(*) FROM bans b WHERE b.server_id = s.id) AS ban_count
        FROM servers s
@@ -62,21 +66,23 @@ adminRoutes.patch('/servers/:id', async (c) => {
   const id = parseServerId(c.req.param('id'), 'id');
   const body = asRecord(await readJson(c));
 
-  const current = await c.env.DB.prepare('SELECT id, name, status, note FROM servers WHERE id = ?')
+  const current = await c.env.DB.prepare('SELECT id, name, owner, location, status, note FROM servers WHERE id = ?')
     .bind(id)
-    .first<{ id: string; name: string; status: string; note: string | null }>();
+    .first<{ id: string; name: string; owner: string | null; location: string | null; status: string; note: string | null }>();
 
   if (!current) throw new ApiError(404, 'not_found', 'Server not found.');
 
   const name = body.name === undefined ? current.name : requireString(body.name, 'name', 2, 64);
   const note = body.note === undefined ? current.note : optionalString(body.note, 'note', 500);
   const status = body.status === undefined ? current.status : parseServerStatus(body.status);
+  const owner = body.owner === undefined ? current.owner : parseOwner(body.owner);
+  const location = body.location === undefined ? current.location : parseLocation(body.location);
 
   const nowIso = new Date().toISOString();
   await c.env.DB.prepare(
-    `UPDATE servers SET name = ?, status = ?, note = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE servers SET name = ?, owner = ?, location = ?, status = ?, note = ?, updated_at = ? WHERE id = ?`,
   )
-    .bind(name, status, note, nowIso, id)
+    .bind(name, owner, location, status, note, nowIso, id)
     .run();
 
   await logAudit(c.env.DB, {
@@ -84,10 +90,10 @@ adminRoutes.patch('/servers/:id', async (c) => {
     actorId: 'admin',
     action: 'server.update',
     target: id,
-    detail: { name, status, note },
+    detail: { name, owner, location, status, note },
   });
 
-  return c.json({ id, name, status, note, updated_at: nowIso });
+  return c.json({ id, name, owner, location, status, note, updated_at: nowIso });
 });
 
 /**
@@ -97,9 +103,9 @@ adminRoutes.patch('/servers/:id', async (c) => {
 adminRoutes.post('/servers/:id/keys', async (c) => {
   const id = parseServerId(c.req.param('id'), 'id');
 
-  const server = await c.env.DB.prepare('SELECT id, status FROM servers WHERE id = ?')
+  const server = await c.env.DB.prepare('SELECT id, owner, location, status FROM servers WHERE id = ?')
     .bind(id)
-    .first<{ id: string; status: string }>();
+    .first<{ id: string; owner: string | null; location: string | null; status: string }>();
 
   if (!server) throw new ApiError(404, 'not_found', 'Server not found.');
   if (server.status !== 'active') {
@@ -109,15 +115,30 @@ adminRoutes.post('/servers/:id/keys', async (c) => {
   const body = asRecord(await readOptionalJson(c));
   const label = optionalString(body.label, 'label', 100);
   const scopes = parseScopes(body.scopes);
+  // group=true：发给「该管理方 + 该地理位置」下所有服共用的 key（server_id 置空）
+  const asGroup = body.group === true || body.group === 'true';
+  if (asGroup && (!server.owner || !server.location)) {
+    throw new ApiError(409, 'missing_group', 'This server has no owner/location, cannot issue a group key.');
+  }
   const key = generateApiKey();
   const keyId = newId('key');
   const nowIso = new Date().toISOString();
 
   await c.env.DB.prepare(
-    `INSERT INTO api_keys (id, server_id, prefix, key_hash, scopes, label, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO api_keys (id, server_id, owner, location, prefix, key_hash, scopes, label, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(keyId, id, keyPrefix(key), await hashSecret(key), scopes.join(' '), label, nowIso)
+    .bind(
+      keyId,
+      asGroup ? null : id,
+      asGroup ? server.owner : null,
+      asGroup ? server.location : null,
+      keyPrefix(key),
+      await hashSecret(key),
+      scopes.join(' '),
+      label,
+      nowIso,
+    )
     .run();
 
   await logAudit(c.env.DB, {
@@ -125,7 +146,7 @@ adminRoutes.post('/servers/:id/keys', async (c) => {
     actorId: 'admin',
     action: 'key.issue',
     target: keyId,
-    detail: { server_id: id, scopes, label },
+    detail: { server_id: id, group: asGroup, owner: asGroup ? server.owner : null, location: asGroup ? server.location : null, scopes, label },
   });
 
   return c.json(
@@ -133,7 +154,9 @@ adminRoutes.post('/servers/:id/keys', async (c) => {
       id: keyId,
       key,
       prefix: keyPrefix(key),
-      server_id: id,
+      server_id: asGroup ? null : id,
+      owner: asGroup ? server.owner : null,
+      location: asGroup ? server.location : null,
       scopes,
       label,
       created_at: nowIso,
@@ -147,10 +170,11 @@ adminRoutes.get('/servers/:id/keys', async (c) => {
   const id = parseServerId(c.req.param('id'), 'id');
 
   const result = await c.env.DB.prepare(
-    `SELECT id, prefix, scopes, label, created_at, last_used_at, revoked_at
-       FROM api_keys WHERE server_id = ? ORDER BY created_at DESC`,
+    `SELECT id, server_id, owner, location, prefix, scopes, label, created_at, last_used_at, revoked_at
+       FROM api_keys WHERE server_id = ? OR (owner = (SELECT owner FROM servers WHERE id = ?) AND location = (SELECT location FROM servers WHERE id = ?))
+      ORDER BY created_at DESC`,
   )
-    .bind(id)
+    .bind(id, id, id)
     .all();
 
   return c.json({ data: result.results ?? [] });

@@ -10,10 +10,12 @@ serversRoutes.get('/', async (c) => {
   requireScope(auth, 'bans:read');
 
   const result = await c.env.DB.prepare(
-    `SELECT id, name, status, note, created_at FROM servers ORDER BY name ASC`,
+    `SELECT id, name, owner, location, status, note, created_at FROM servers ORDER BY location ASC, name ASC`,
   ).all<{
     id: string;
     name: string;
+    owner: string | null;
+    location: string | null;
     status: 'active' | 'defederated';
     note: string | null;
     created_at: string;

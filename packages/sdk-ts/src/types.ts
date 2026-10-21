@@ -35,9 +35,17 @@ export interface ServerRef {
   id: string;
   /** Human readable name of the server that issued the ban. */
   name: string;
+  /**
+   * Where that server sits (`CN`, `EU-Frankfurt`, …). A reader uses it to judge
+   * whether a ban came from a server in its own region or from abroad.
+   */
+  location?: string | null;
 }
 
 export interface Server extends ServerRef {
+  /** 管理方：同一管理方在同一地理位置的多台服共用一个 key */
+  owner: string | null;
+  location: string | null;
   status: ServerStatus;
   note: string | null;
   created_at: string;

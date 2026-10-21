@@ -7,13 +7,17 @@ export type Scope = 'bans:read' | 'bans:write';
 
 interface KeyRow {
   id: string;
-  server_id: string;
+  /** 单服 key 才有；组 key 为 null */
+  server_id: string | null;
+  /** 组 key 的管理方 / 地理位置；单服 key 为 null */
+  owner: string | null;
+  location: string | null;
   key_hash: string;
   scopes: string;
   revoked_at: string | null;
   last_used_at: string | null;
-  server_name: string;
-  server_status: string;
+  server_name: string | null;
+  server_status: string | null;
 }
 
 /**
@@ -36,10 +40,10 @@ export async function requireApiKey(c: Context<AppEnv>): Promise<AuthContext> {
 
   // The prefix is only an index; the SHA-256 comparison is what authenticates.
   const rows = await c.env.DB.prepare(
-    `SELECT k.id, k.server_id, k.key_hash, k.scopes, k.revoked_at, k.last_used_at,
+    `SELECT k.id, k.server_id, k.owner, k.location, k.key_hash, k.scopes, k.revoked_at, k.last_used_at,
             s.name AS server_name, s.status AS server_status
        FROM api_keys k
-       JOIN servers s ON s.id = k.server_id
+       LEFT JOIN servers s ON s.id = k.server_id
       WHERE k.prefix = ?`,
   )
     .bind(token.slice(4, 12))
@@ -54,8 +58,20 @@ export async function requireApiKey(c: Context<AppEnv>): Promise<AuthContext> {
   if (row.revoked_at) {
     throw new ApiError(401, 'key_revoked', 'This API key has been revoked.');
   }
-  if (row.server_status !== 'active') {
-    throw new ApiError(403, 'server_defederated', 'This server has been removed from the federation.');
+  if (row.server_id) {
+    if (row.server_status !== 'active') {
+      throw new ApiError(403, 'server_defederated', 'This server has been removed from the federation.');
+    }
+  } else {
+    // 组 key：组里至少还有一台 active 的服，否则等同于除名
+    const active = await c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM servers WHERE owner = ? AND location = ? AND status = 'active'`,
+    )
+      .bind(row.owner, row.location)
+      .first<{ n: number }>();
+    if (!active || Number(active.n) === 0) {
+      throw new ApiError(403, 'server_defederated', "No active server left in this key's group.");
+    }
   }
 
   touchKey(c, row);
@@ -64,8 +80,65 @@ export async function requireApiKey(c: Context<AppEnv>): Promise<AuthContext> {
     keyId: row.id,
     serverId: row.server_id,
     serverName: row.server_name,
+    owner: row.owner,
+    location: row.location,
     scopes: row.scopes.split(/\s+/).filter(Boolean),
   };
+}
+
+/**
+ * 这条 ban 算哪台服的？
+ *
+ * - 单服 key：只能是它自己（请求里写了别的 server_id → 403）；
+ * - 组 key + 请求里带 server_id：必须是本组（owner+location）里的服；
+ * - 组 key + 没带：组里只有一台 → 就是它；多台 → 400 ambiguous_server（不猜）。
+ */
+export async function resolveWriteServer(
+  db: D1Database,
+  auth: AuthContext,
+  requested: string | null | undefined,
+): Promise<string> {
+  const asked = requested ? String(requested).trim() : '';
+
+  if (auth.serverId) {
+    if (asked && asked !== auth.serverId) {
+      throw new ApiError(403, 'forbidden', 'This key belongs to another server.');
+    }
+    return auth.serverId;
+  }
+
+  if (asked) {
+    const row = await db
+      .prepare(`SELECT status FROM servers WHERE id = ? AND owner = ? AND location = ?`)
+      .bind(asked, auth.owner, auth.location)
+      .first<{ status: string }>();
+    if (!row) throw new ApiError(403, 'forbidden', 'server_id is not covered by this key.');
+    if (row.status !== 'active') {
+      throw new ApiError(409, 'server_defederated', 'That server has been removed from the federation.');
+    }
+    return asked;
+  }
+
+  const rows = await db
+    .prepare(`SELECT id FROM servers WHERE owner = ? AND location = ? AND status = 'active' ORDER BY id`)
+    .bind(auth.owner, auth.location)
+    .all<{ id: string }>();
+  const list = rows.results ?? [];
+  if (list.length === 0) throw new ApiError(403, 'forbidden', "No active server left in this key's group.");
+  if (list.length > 1) {
+    throw new ApiError(400, 'ambiguous_server', 'This key covers several servers; set server_id in the request.');
+  }
+  return list[0]!.id;
+}
+
+/** 读/撤销：这台服归不归本 key 管（组 key 覆盖整组） */
+export async function canTouchServer(db: D1Database, auth: AuthContext, serverId: string): Promise<boolean> {
+  if (auth.serverId) return auth.serverId === serverId;
+  const row = await db
+    .prepare(`SELECT 1 AS x FROM servers WHERE id = ? AND owner = ? AND location = ?`)
+    .bind(serverId, auth.owner, auth.location)
+    .first();
+  return Boolean(row);
 }
 
 export function requireScope(auth: AuthContext, scope: Scope): void {

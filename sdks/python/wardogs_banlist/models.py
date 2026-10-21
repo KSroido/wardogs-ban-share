@@ -21,23 +21,36 @@ BAN_REASONS = (
 class ServerRef:
     id: str
     name: str
+    #: 服务器地理位置（`CN` / `EU-Frankfurt` …）；老记录可能为空
+    location: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ServerRef":
-        return cls(id=str(data.get("id", "")), name=str(data.get("name", "")))
+        location = data.get("location")
+        return cls(
+            id=str(data.get("id", "")),
+            name=str(data.get("name", "")),
+            location=str(location) if location else None,
+        )
 
 
 @dataclass(frozen=True)
 class Server(ServerRef):
-    status: str
-    note: Optional[str]
-    created_at: str
+    #: 管理方；同管理方 + 同地理位置共用一个 key
+    owner: Optional[str] = None
+    status: str = "active"
+    note: Optional[str] = None
+    created_at: str = ""
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Server":
+        location = data.get("location")
+        owner = data.get("owner")
         return cls(
             id=str(data.get("id", "")),
             name=str(data.get("name", "")),
+            location=str(location) if location else None,
+            owner=str(owner) if owner else None,
             status=str(data.get("status", "active")),
             note=data.get("note"),
             created_at=str(data.get("created_at", "")),

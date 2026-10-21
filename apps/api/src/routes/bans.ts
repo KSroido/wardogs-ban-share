@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Ban, BanReason, SubmitBanDuplicate, SubmitBanError } from '@wardogs/banlist';
 import type { AppEnv } from '../env';
-import { requireApiKey, requireScope } from '../auth';
+import { canTouchServer, requireApiKey, requireScope, resolveWriteServer } from '../auth';
 import { auditStatement } from '../db';
 import { ApiError } from '../errors';
 import { readJson } from '../http';
@@ -121,6 +121,8 @@ bansRoutes.post('/', async (c) => {
 
   const body = await readJson(c);
   const rawBans = extractBans(body);
+  // 组 key 必须在请求里指明是哪台服（组里只有一台时自动取那一台）
+  const targetServerId = await resolveWriteServer(c.env.DB, auth, requestedServerId(body));
 
   if (rawBans.length === 0) {
     throw new ApiError(400, 'invalid_request', 'bans must contain at least one entry.');
@@ -146,7 +148,7 @@ bansRoutes.post('/', async (c) => {
     }
 
     const value = validation.value;
-    const duplicate = await findDuplicate(db, auth.serverId, value, nowIso);
+    const duplicate = await findDuplicate(db, targetServerId, value, nowIso);
 
     if (duplicate) {
       duplicates.push(toDuplicate(index, duplicate, now.getTime()));
@@ -160,7 +162,7 @@ bansRoutes.post('/', async (c) => {
         .prepare(INSERT_BAN)
         .bind(
           id,
-          auth.serverId,
+          targetServerId,
           value.steam_id,
           value.player_name,
           value.reason,
@@ -176,7 +178,7 @@ bansRoutes.post('/', async (c) => {
         .run();
     } catch (error) {
       if (isUniqueViolation(error)) {
-        const raced = await findDuplicate(db, auth.serverId, value, nowIso);
+        const raced = await findDuplicate(db, targetServerId, value, nowIso);
         if (raced) {
           duplicates.push(toDuplicate(index, raced, now.getTime()));
           continue;
@@ -202,7 +204,7 @@ bansRoutes.post('/', async (c) => {
     audit.push(
       auditStatement(db, {
         actorType: 'server',
-        actorId: auth.serverId,
+        actorId: targetServerId,
         action: 'ban.create',
         target: id,
         detail: {
@@ -244,8 +246,8 @@ bansRoutes.post('/:id/revoke', async (c) => {
   const row = await loadBan(c.env.DB, id);
 
   if (!row) throw new ApiError(404, 'not_found', 'Ban not found.');
-  if (row.server_id !== auth.serverId) {
-    throw new ApiError(403, 'forbidden', 'A server may only revoke its own bans.');
+  if (!(await canTouchServer(c.env.DB, auth, row.server_id))) {
+    throw new ApiError(403, 'forbidden', 'A key may only revoke bans of the servers it covers.');
   }
 
   const nowIso = new Date().toISOString();
@@ -268,7 +270,7 @@ bansRoutes.post('/:id/revoke', async (c) => {
 
     await auditStatement(c.env.DB, {
       actorType: 'server',
-      actorId: auth.serverId,
+      actorId: row.server_id,
       action: 'ban.revoke',
       target: id,
       detail: { reason, key_id: auth.keyId },
@@ -324,6 +326,13 @@ function toDuplicate(index: number, row: ExistingBanRow, nowMs: number): SubmitB
     reason: row.reason as BanReason,
     status: deriveStatus(row, nowMs),
   };
+}
+
+/** 组 key 用：请求顶层可带 `server_id` 指明具体是哪台服 */
+function requestedServerId(body: unknown): string | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const raw = (body as Record<string, unknown>).server_id;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
 }
 
 function extractBans(body: unknown): unknown[] {

@@ -1,7 +1,11 @@
 export interface AuthContext {
   keyId: string;
-  serverId: string;
-  serverName: string;
+  /** 单服 key 绑定的服务器；组 key 为 null（用 owner+location 解析） */
+  serverId: string | null;
+  serverName: string | null;
+  /** 组 key 的管理方 / 地理位置；单服 key 为 null */
+  owner: string | null;
+  location: string | null;
   scopes: string[];
 }
 

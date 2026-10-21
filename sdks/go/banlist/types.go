@@ -33,11 +33,15 @@ var Reasons = []Reason{
 type ServerRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Location 是服务器所在地理位置（`CN` / `EU-Frankfurt` …）；老记录可能为空。
+	Location *string `json:"location,omitempty"`
 }
 
 type Server struct {
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`
+	Owner     *string `json:"owner"`
+	Location  *string `json:"location"`
 	Status    string  `json:"status"`
 	Note      *string `json:"note"`
 	CreatedAt string  `json:"created_at"`

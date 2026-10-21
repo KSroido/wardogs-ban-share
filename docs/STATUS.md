@@ -39,6 +39,7 @@ Wardogs 社区服的联邦 ban 名单：成员服用各自密钥提交封禁记�
 - **数据模型**：`servers` / `api_keys`（只存 `SHA-256(key)` + `prefix` 索引）/ `bans` / `player_stats`（按 SteamID 聚合）/ `audit`。迁移 `0001_init.sql`、`0002_fix_steam_id_check.sql`。
 - **鉴权**：`wdb_` 前缀密钥 → 映射到唯一 server，提交时不能声明「我是谁」；scope 目前只有 `bans:read` / `bans:write`。维护者接口 `/admin/*` 用 `ADMIN_TOKEN`（`x-admin-token` 或 Bearer，≥24 字符），未配置时返回 `503 admin_disabled`。
 - **写到线上的是密钥之外的一切**：`ADMIN_TOKEN`、CF Token 只走 Workers Secrets / 环境变量，绝不入库。
+- **成员服字段**：`owner`（管理方）+ `location`（地理位置，申请必填）。一个 key 挂在 (owner, location) 组上；组里多台服时提交用顶层 `server_id` 指明具体服务器。
 - **reason 枚举**（8 个，服务端固定）：`cheat` `rulebreak` `chattroll` `gametroll` `racism` `foreignofserverlocation` `steamrisk` `ownreason`。
 - **记录语义**：只增不改，解封是软删除 `revoked`；`external_case_id` 做幂等；`permanent` 或 `duration_days`（1–36500）换算 `expires_at`；批量上限 100，部分失败返回 `207` + 逐条错误。
 - **读接口**：`/v1/players/{steamId}` 给出 `server_count` / `active_server_count` / `ban_count` / `active_ban_count` / `permanent_count`。读也需要 key（不做公开匿名查询）。

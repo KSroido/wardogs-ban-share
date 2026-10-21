@@ -4,6 +4,7 @@ import type { AppEnv } from '../env';
 import { generateApiKey, hashSecret, keyPrefix } from '../crypto';
 import { logAudit } from '../db';
 import { newId } from '../ids';
+import { parseLocation, parseOwner } from '../validation';
 
 /**
  * 维护者管理面板（`https://wardogs.ksroido.art/ban-share`）。
@@ -67,6 +68,16 @@ panelRoutes.post('/servers', async (c) => {
   const db = c.env.DB;
   const id = wanted || (await allocateServerId(db, slugify(name)));
 
+  // 接入申请必填：地理位置；管理方不填就当这台服自己一个管理方
+  let location: string;
+  let owner: string;
+  try {
+    location = parseLocation(str(body.location));
+    owner = str(body.owner).trim() ? parseOwner(str(body.owner)) : id;
+  } catch (error) {
+    return c.html(await dashboardPage(c, `位置/管理方不合法：${esc((error as Error).message)}`), 400);
+  }
+
   if (wanted) {
     const exists = await db.prepare('SELECT 1 AS x FROM servers WHERE id = ?').bind(wanted).first();
     if (exists) return c.html(await dashboardPage(c, `服务器 id「${esc(wanted)}」已存在`), 409);
@@ -75,13 +86,17 @@ panelRoutes.post('/servers', async (c) => {
   const nowIso = new Date().toISOString();
   await db
     .prepare(
-      `INSERT INTO servers (id, name, status, note, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?)`,
+      `INSERT INTO servers (id, name, owner, location, status, note, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
     )
-    .bind(id, name, note, nowIso, nowIso)
+    .bind(id, name, owner, location, note, nowIso, nowIso)
     .run();
 
   await logAudit(db, { actorType: 'admin', actorId: 'panel', action: 'server.create', target: id, detail: { name } });
-  return c.html(await dashboardPage(c, `已建服：${esc(name)}（id=${esc(id)}）`), 201);
+  return c.html(
+    await dashboardPage(c, `已建服：${esc(name)}（id=${esc(id)}，管理方=${esc(owner)}，位置=${esc(location)}）`),
+    201,
+  );
 });
 
 /** 发 key：明文只渲染这一次，库里只留 SHA-256 与前缀 */
@@ -91,6 +106,7 @@ panelRoutes.post('/keys', async (c) => {
   const body = await c.req.parseBody();
   const serverId = str(body.server_id).trim();
   const label = str(body.label).trim() || null;
+  const asGroup = body.group !== undefined;
 
   const allowWrite = body.write !== undefined;
   const allowRead = body.read !== undefined;
@@ -101,13 +117,17 @@ panelRoutes.post('/keys', async (c) => {
 
   const db = c.env.DB;
   const server = await db
-    .prepare('SELECT id, name, status FROM servers WHERE id = ?')
+    .prepare('SELECT id, name, owner, location, status FROM servers WHERE id = ?')
     .bind(serverId)
-    .first<{ id: string; name: string; status: string }>();
+    .first<{ id: string; name: string; owner: string | null; location: string | null; status: string }>();
 
   if (!server) return c.html(await dashboardPage(c, '没有这个服务器'), 404);
   if (server.status !== 'active') {
     return c.html(await dashboardPage(c, '这个服务器已被联邦除名，不能发 key'), 409);
+  }
+
+  if (asGroup && (!server.owner || !server.location)) {
+    return c.html(await dashboardPage(c, '这台服没有管理方/位置，不能发组 key'), 409);
   }
 
   const key = generateApiKey();
@@ -116,10 +136,20 @@ panelRoutes.post('/keys', async (c) => {
 
   await db
     .prepare(
-      `INSERT INTO api_keys (id, server_id, prefix, key_hash, scopes, label, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO api_keys (id, server_id, owner, location, prefix, key_hash, scopes, label, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(keyId, server.id, keyPrefix(key), await hashSecret(key), scopes.join(' '), label, nowIso)
+    .bind(
+      keyId,
+      asGroup ? null : server.id,
+      asGroup ? server.owner : null,
+      asGroup ? server.location : null,
+      keyPrefix(key),
+      await hashSecret(key),
+      scopes.join(' '),
+      label,
+      nowIso,
+    )
     .run();
 
   await logAudit(db, {
@@ -127,10 +157,20 @@ panelRoutes.post('/keys', async (c) => {
     actorId: 'panel',
     action: 'key.issue',
     target: keyId,
-    detail: { server_id: server.id, scopes, label },
+    detail: {
+      server_id: asGroup ? null : server.id,
+      group: asGroup,
+      owner: asGroup ? server.owner : null,
+      location: asGroup ? server.location : null,
+      scopes,
+      label,
+    },
   });
 
-  return c.html(issuedPage(server.name, server.id, key, scopes, label), 201);
+  const scopeText = asGroup
+    ? `${server.owner} @ ${server.location}（组 key，覆盖该管理方该位置下所有服）`
+    : server.id;
+  return c.html(issuedPage(server.name, scopeText, key, scopes, label), 201);
 });
 
 panelRoutes.post('/keys/revoke', async (c) => {
@@ -247,19 +287,19 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
 
   const servers = await db
     .prepare(
-      `SELECT s.id, s.name, s.status, s.note, s.created_at,
+      `SELECT s.id, s.name, s.owner, s.location, s.status, s.note, s.created_at,
               (SELECT COUNT(*) FROM api_keys k WHERE k.server_id = s.id AND k.revoked_at IS NULL) AS active_keys,
               (SELECT COUNT(*) FROM bans b WHERE b.server_id = s.id) AS ban_count
          FROM servers s ORDER BY s.created_at ASC`,
     )
-    .all<{ id: string; name: string; status: string; note: string | null; created_at: string; active_keys: number; ban_count: number }>();
+    .all<{ id: string; name: string; owner: string | null; location: string | null; status: string; note: string | null; created_at: string; active_keys: number; ban_count: number }>();
 
   const keys = await db
     .prepare(
-      `SELECT k.id, k.server_id, k.prefix, k.scopes, k.label, k.created_at, k.last_used_at, k.revoked_at
+      `SELECT k.id, k.server_id, k.owner, k.location, k.prefix, k.scopes, k.label, k.created_at, k.last_used_at, k.revoked_at
          FROM api_keys k ORDER BY k.created_at DESC LIMIT 50`,
     )
-    .all<{ id: string; server_id: string; prefix: string; scopes: string; label: string | null; created_at: string; last_used_at: string | null; revoked_at: string | null }>();
+    .all<{ id: string; server_id: string | null; owner: string | null; location: string | null; prefix: string; scopes: string; label: string | null; created_at: string; last_used_at: string | null; revoked_at: string | null }>();
 
   const bans = await db
     .prepare(
@@ -279,6 +319,8 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
       (s) => `<tr>
         <td><code>${esc(s.id)}</code></td>
         <td>${esc(s.name)}</td>
+        <td><code>${esc(s.location ?? '—')}</code></td>
+        <td class="muted">${esc(s.owner ?? '—')}</td>
         <td>${s.status === 'active' ? '<span class="ok">active</span>' : '<span class="warn">defederated</span>'}</td>
         <td class="num">${s.active_keys}</td>
         <td class="num">${s.ban_count}</td>
@@ -290,6 +332,7 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
                    <input name="label" placeholder="备注（可选）" size="12">
                    <label><input type="checkbox" name="read" checked> 读</label>
                    <label><input type="checkbox" name="write" checked> 写</label>
+                   <label title="覆盖同管理方、同位置的所有服"><input type="checkbox" name="group"> 组 key</label>
                    <button type="submit">发 key</button>
                  </form>`
               : '<span class="muted">—</span>'
@@ -303,7 +346,11 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
     .map(
       (k) => `<tr>
         <td><code>wdb_${esc(k.prefix)}…</code></td>
-        <td>${esc(k.server_id)}</td>
+        <td>${
+          k.server_id
+            ? `<code>${esc(k.server_id)}</code>`
+            : `<span class="ok">组</span> <span class="muted">${esc(k.owner ?? '')} @ ${esc(k.location ?? '')}</span>`
+        }</td>
         <td>${esc(k.scopes)}</td>
         <td>${esc(k.label ?? '—')}</td>
         <td class="muted">${esc(shortTime(k.created_at))}</td>
@@ -368,6 +415,10 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
          <input name="id" placeholder="id（可选，小写字母/数字/连字符）">
        </div>
        <div class="row">
+         <input name="owner" placeholder="管理方（可选，默认=id；同管理方同位置共用一个 key）">
+         <input name="location" placeholder="地理位置（必填，例：cn / eu-frankfurt / us-west）" required>
+       </div>
+       <div class="row">
          <input name="note" placeholder="备注（可选）">
          <button type="submit">创建</button>
        </div>
@@ -376,8 +427,8 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
      <section class="card">
        <h2>成员服</h2>
        <table>
-         <thead><tr><th>id</th><th>名字</th><th>状态</th><th>有效 key</th><th>ban 数</th><th>发 key</th></tr></thead>
-         <tbody>${serverRows || `<tr><td colspan="6" class="muted">还没有成员服</td></tr>`}</tbody>
+         <thead><tr><th>id</th><th>名字</th><th>位置</th><th>管理方</th><th>状态</th><th>有效 key</th><th>ban 数</th><th>发 key</th></tr></thead>
+         <tbody>${serverRows || `<tr><td colspan="8" class="muted">还没有成员服</td></tr>`}</tbody>
        </table>
      </section>
 

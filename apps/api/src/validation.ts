@@ -197,6 +197,44 @@ export function parseServerId(value: string, field = 'server'): string {
   return trimmed;
 }
 
+/**
+ * 管理方（owner）：一组服的运营方标识。归一化成小写 slug，方便「同管理方」判断。
+ * 允许字母数字、短横线、下划线、点，2–32 位。
+ */
+export function parseOwner(value: unknown, field = 'owner'): string {
+  if (typeof value !== 'string') {
+    throw new ApiError(400, 'invalid_request', `${field} must be a string.`);
+  }
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '-');
+  if (!/^[a-z0-9][a-z0-9._-]{1,31}$/.test(normalized)) {
+    throw new ApiError(
+      400,
+      'invalid_owner',
+      `${field} must be 2-32 chars: letters, digits, dot, dash or underscore.`,
+    );
+  }
+  return normalized;
+}
+
+/**
+ * 地理位置（location）：申请接入时必填，例如 `CN`、`EU-Frankfurt`、`US-West`。
+ * 归一化成小写并把空格换成短横线 —— 「同管理方 + 同位置」要能精确匹配，大小写不能分裂。
+ */
+export function parseLocation(value: unknown, field = 'location'): string {
+  if (typeof value !== 'string') {
+    throw new ApiError(400, 'invalid_request', `${field} must be a string.`);
+  }
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '-');
+  if (!/^[a-z0-9][a-z0-9._-]{1,31}$/.test(normalized)) {
+    throw new ApiError(
+      400,
+      'invalid_location',
+      `${field} must be 2-32 chars (e.g. cn, eu-frankfurt, us-west).`,
+    );
+  }
+  return normalized;
+}
+
 /** Build the `status` filter fragment. Returns null for `all`. */
 export function statusClause(status: ListStatus, nowIso: string): { sql: string; params: string[] } | null {
   switch (status) {

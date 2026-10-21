@@ -4,6 +4,8 @@ export interface BanRow {
   id: string;
   server_id: string;
   server_name: string;
+  /** 服务器所在地理位置（用于判断「外籍服」）；老记录可能为 null */
+  server_location: string | null;
   steam_id: string;
   player_name: string | null;
   reason: string;
@@ -21,7 +23,8 @@ export interface BanRow {
 }
 
 export const BAN_SELECT = `
-  SELECT b.id, b.server_id, s.name AS server_name, b.steam_id, b.player_name, b.reason,
+  SELECT b.id, b.server_id, s.name AS server_name, s.location AS server_location,
+         b.steam_id, b.player_name, b.reason,
          b.note, b.evidence_url, b.permanent, b.duration_days, b.expires_at, b.status,
          b.external_case_id, b.revoked_at, b.revoke_reason, b.created_at, b.updated_at
     FROM bans b
@@ -31,7 +34,7 @@ export const BAN_SELECT = `
 export function banFromRow(row: BanRow, nowMs: number, reports: PlayerReports): Ban {
   return {
     id: row.id,
-    server: { id: row.server_id, name: row.server_name },
+    server: { id: row.server_id, name: row.server_name, location: row.server_location },
     steam_id: row.steam_id,
     player_name: row.player_name,
     reason: row.reason as BanReason,

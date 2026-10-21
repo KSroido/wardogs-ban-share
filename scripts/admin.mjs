@@ -24,12 +24,14 @@ const commands = {
     run: () => request('GET', '/servers'),
   },
   'create-server': {
-    help: 'create a member server: --name <name> [--id <slug>] [--note <text>]',
+    help: 'create a member server: --name <name> --location <geo> [--id <slug>] [--owner <admin>] [--note <text>]',
     run: () => {
       const name = required('name');
       return request('POST', '/servers', {
         name,
         id: flags.id,
+        owner: flags.owner,
+        location: required('location'),
         note: flags.note,
       });
     },
@@ -42,11 +44,13 @@ const commands = {
       }),
   },
   'issue-key': {
-    help: 'issue a key: --server <id> [--label <text>] [--scopes bans:read,bans:write]',
+    help: 'issue a key: --server <id> [--label <text>] [--scopes bans:read,bans:write] [--group]',
     run: () =>
       request('POST', `/servers/${required('server')}/keys`, {
         label: flags.label,
         scopes: flags.scopes,
+        // --group：发「同管理方 + 同位置」所有服共用的 key
+        group: flags.group === true || flags.group === 'true' ? true : undefined,
       }),
   },
   keys: {

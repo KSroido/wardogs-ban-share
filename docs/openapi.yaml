@@ -414,6 +414,13 @@ components:
           description: Stable slug
         name:
           type: string
+        location:
+          type: [string, 'null']
+          description: >-
+            Where the reporting server sits (`cn`, `eu-frankfurt`, `us-west` …).
+            Use it to tell a ban filed by a server in another region apart from a
+            local one; `foreignofserverlocation` is the reason for the former.
+          maxLength: 32
 
     Server:
       allOf:
@@ -421,6 +428,11 @@ components:
         - type: object
           required: [status, created_at]
           properties:
+            owner:
+              type: [string, 'null']
+              description: >-
+                Managing party. One API key is issued per (owner, location) pair, so
+                several servers of the same admin in the same place share a token.
             status:
               $ref: '#/components/schemas/ServerStatus'
             note:

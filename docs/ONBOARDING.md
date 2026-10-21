@@ -12,8 +12,9 @@
 |---|---|
 | 服务器名称 | 展示在 ban 记录里的名字，例如 `Wardogs Main` |
 | 服务器 ID（slug） | 小写字母、数字、短横线，2–31 位，例如 `wardogs-main`。**创建后不能改** |
+| 管理方 | 运营这组服的主体（同一个管理方可能有多台服），例如 `wardogs` |
+| 服务器地理位置 | **必填**：服务器实际所在地，例如 `cn`、`eu-frankfurt`、`us-west`。其它服读 ban 时能看到这个位置，用来判断是不是「外籍服」（`foreignofserverlocation`） |
 | 联系方式 | Discord / QQ / 邮箱，用于审核和密钥下发 |
-| 服务器地区 | 例如 `CN`、`Asia`、`EU` |
 | 大致在线人数 | 帮助判断接入规模 |
 | 管理规范 | 你们的封禁标准、申诉渠道；有链接最好 |
 | 申请理由 | 为什么需要联合名单，能提供什么 |
@@ -32,8 +33,12 @@
 审核结果会回复在 Issue 里。通过后维护者执行：
 
 ```bash
-node scripts/admin.mjs create-server --name "Wardogs Main" --id wardogs-main
+# 建服：管理方 + 地理位置都是审核时确认过的
+node scripts/admin.mjs create-server --name "Wardogs Main" --id wardogs-main --owner wardogs --location cn
+# 单服 key（只给这一台服）
 node scripts/admin.mjs issue-key --server wardogs-main --label prod
+# 组 key（同管理方 + 同位置的所有服共用）
+node scripts/admin.mjs issue-key --server wardogs-main --label prod --group
 ```
 
 然后把 `wdb_...` 通过私密渠道发给你，并告知对应的服务器 slug。
@@ -49,7 +54,9 @@ node scripts/admin.mjs issue-key --server wardogs-main --label prod
   ```
 
 - 不要写进代码、配置文件、Dockerfile、Git 仓库、聊天记录。
-- 一个 key 对应一个服，**不要多个服共用**。需要多台机器时可申请多个 key（便于单独吊销）。
+- **一个 key 对应「一个管理方 + 一个地理位置」**：同管理方、同地理位置的多台服共用一个 token（例：`wardogs` 在 `cn` 的三台服共用一枚 key）。
+- 组 key 提交 ban 时用请求顶层的 `server_id` 指明具体是哪台服；组里只有一台服时可以省略。
+- 不同地理位置要另外签发 key（`location` 不同 = 不同 key），这样某个位置出事可以只吊销那一枚。
 - 怀疑泄露：立刻让维护者 `revoke-key --id key_...`，然后重新签发。
 
 ## 4. 第一次全量同步
