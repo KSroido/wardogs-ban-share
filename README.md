@@ -295,8 +295,8 @@ curl -G https://wardogs.ksroido.art/api/ban-share/v1/players \
 
 ## 加入联盟
 
-1. 用 [服务器申请表](https://github.com/KSroido/wardogs-ban-share/issues/new?template=server-application.yml) 提交 Issue。
-2. 维护者审核后，在库里创建服务器并签发密钥。
+1. 用 [服务器申请表](https://github.com/KSroido/wardogs-ban-share/issues/new?template=server-application.yml) 提交 Issue。**管理方**和**服务器地理位置**必填 —— 位置会写进每条 ban 记录，别的服据此判断是不是「外籍服」（`foreignofserverlocation`）。
+2. 维护者审核后，在库里创建服务器并签发密钥：**一个 key 对应「一个管理方 + 一个地理位置」**，同组多台服共用；组里不止一台服时，提交用顶层 `server_id` 指明是哪台。换地理位置要单独发一枚 key。
 3. 密钥**只通过私密渠道**发送一次，不要贴在 Issue 里，也不要提交到仓库。
 4. 按 [ONBOARDING.md](docs/ONBOARDING.md) 完成接入和首次全量同步。
 

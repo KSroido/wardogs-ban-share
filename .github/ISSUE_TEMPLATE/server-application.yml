@@ -34,12 +34,31 @@ body:
     validations:
       required: true
   - type: input
-    id: region
+    id: owner
     attributes:
-      label: 服务器地区
-      placeholder: CN / Asia / EU
+      label: 管理方
+      description: 运营这组服的主体。同一个管理方在同一地理位置的多台服共用一个 API key；填你自己的标识即可
+      placeholder: wardogs
     validations:
       required: true
+  - type: input
+    id: location
+    attributes:
+      label: 服务器地理位置（必填）
+      description: >-
+        服务器实际所在地，小写、可用短横线，例如 cn / eu-frankfurt / us-west。
+        其它服拉取 ban 时会看到这个位置，用来判断记录来自本地区还是「外籍服」（foreignofserverlocation）
+      placeholder: cn
+    validations:
+      required: true
+  - type: input
+    id: servers_in_group
+    attributes:
+      label: 同管理方、同地理位置下还有哪些服
+      description: 这些服会共用同一个 API key；只写你希望被覆盖进来的服务器 ID（没有就留空）
+      placeholder: wardogs-eu-2, wardogs-eu-3
+    validations:
+      required: false
   - type: input
     id: population
     attributes:
@@ -76,4 +95,6 @@ body:
         - label: 我理解误封由本服负责撤销，联盟不替成员服裁决申诉
           required: true
         - label: 我会把密钥保存在服务器的环境变量/secret 管理器中，不提交到仓库或发到公开渠道
+          required: true
+        - label: 我理解一个密钥对应「一个管理方 + 一个地理位置」，同组内的服共用它；换位置要单独申请密钥
           required: true
