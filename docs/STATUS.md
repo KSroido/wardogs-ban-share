@@ -14,6 +14,7 @@ Wardogs 社区服的联邦 ban 名单：成员服用各自密钥提交封禁记�
 | 版本 | `0.1.0`（API `/v1`） |
 | 仓库 | [KSroido/wardogs-ban-share](https://github.com/KSroido/wardogs-ban-share)（public） |
 | 部署 | Cloudflare Workers + 单个 D1，无服务器、无自建库 |
+| 维护者面板 | `https://wardogs.ksroido.art/ban-share`（`ADMIN_TOKEN` 登录；建服 / 发 key / 撤 ban / 审计） |
 
 ## 线上部署
 
@@ -80,6 +81,18 @@ Wardogs 社区服的联邦 ban 名单：成员服用各自密钥提交封禁记�
 
 **P3**：联盟治理文档、公开匿名统计页、多区域、告警。
 
+## 联合成员与集成（2026-10-21）
+
+| 项 | 值 |
+|---|---|
+| 成员服 id | `wardogs`（Wardogs 社区服） |
+| key scope | `bans:read bans:write`（一枚 key，QQ 机器人与 anticheat cron 共用） |
+| key 存放 | Workers secret `BAN_SHARE_KEY`（`wardogs-qqbot` / `wardogs-anticheat-cron`）；GitHub Secret 同名 |
+| 面板 token | Workers secret `ADMIN_TOKEN`（32 位随机，仅本服务使用，独立于 anticheat `/dashboard`） |
+
+- **QQ 机器人**（`D:/wardogs-qqbot`）：`/ban <steamId 或 steam 名字> <理由序号 1–8>` → Nightwatch 永久封 + 联合库提交；不带序号只回理由表；`/unban` → NW 解封 + 撤销本服联合记录。
+- **反作弊 cron**（`D:/wardogs-anti-cheat`）：每分钟拿在线名单对照联合库，命中 `cheat` 默认**踢出**（理由 `来自社区服联合反作弊数据: cheat`）；可用 D1 `settings.banshare_reasons` 放开到别的 reason，`flag banshare_enforce='0'` 一键关；本地白名单 = 豁免名单（含赞助商/预留位）+ `settings.banshareWhitelist`。region.ts 自己判定的 Steam 风险永久封会以 `steamrisk` 上报。
+
 ## 决策记录
 
 | 日期 | 决策 | 理由 |
@@ -89,6 +102,8 @@ Wardogs 社区服的联邦 ban 名单：成员服用各自密钥提交封禁记�
 | 2026-10-21 | `check-secrets` 改为只扫 git 可见文件 | 原实现遍历工作树，把 gitignore 的本地转录音频报成 CI 红灯（假阳性） |
 | 2026-10-21 | 不把 pinned 的桌面会话 `/handoff` 到 QQ，改用本文件当跨会话锚点 | 那个会话只有 2 条导入消息；handoff 会顶掉当前 QQ 会话，收益为零 |
 | 2026-10-21 | 对话历史导出留在 `opencode-history/`（gitignored） | 真历史在 opencode 导出里，导入的 Hermes 会话只有摘要 |
+| 2026-10-21 | 面板 ADMIN_TOKEN 独立于 anticheat `/dashboard`，各自轮换 | 一处泄露不影响另一处；面板只发/吊销 key、撤 ban |
+| 2026-10-21 | 联合库记录默认只对 `cheat` 执行踢出，其他 reason 只当情报 | 名单是提示不是判决；要更严就改 `settings.banshare_reasons`，不改代码 |
 
 ## 怎么继续
 

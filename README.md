@@ -11,6 +11,8 @@ Wardogs 社区服的**联合 ban 名单**。各服管理员用自己服务器专
 >
 > **接手项目先读 [docs/STATUS.md](docs/STATUS.md)**：当前线上版本、部署配置、未完成项和决策记录都在那里。
 
+维护者面板：<https://wardogs.ksroido.art/ban-share> —— 建成员服、发 / 吊销 API key、紧急撤销 ban、看审计。登录用本服务的 `ADMIN_TOKEN`（`?token=` 或登录表单，12 小时 cookie），与 anticheat 的 `/dashboard` token 相互独立。
+
 ---
 
 ## 目录
