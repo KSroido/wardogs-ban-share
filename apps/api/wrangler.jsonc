@@ -15,6 +15,14 @@
     {
       "pattern": "wardogs.ksroido.art/api/ban-share/*",
       "zone_name": "ksroido.art"
+    },
+    {
+      "pattern": "wardogs.ksroido.art/ban-share",
+      "zone_name": "ksroido.art"
+    },
+    {
+      "pattern": "wardogs.ksroido.art/ban-share/*",
+      "zone_name": "ksroido.art"
     }
   ],
   "triggers": {

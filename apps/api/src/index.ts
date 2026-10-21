@@ -4,12 +4,13 @@ import type { AppEnv, Env } from './env';
 import { ApiError } from './errors';
 import { adminRoutes } from './routes/admin';
 import { bansRoutes } from './routes/bans';
+import { panelRoutes } from './routes/panel';
 import { playersRoutes } from './routes/players';
 import { serversRoutes } from './routes/servers';
 import { reindexAll } from './stats';
 
-export const API_PREFIX = '/api/ban-share';
-export const VERSION = '0.1.0';
+const API_PREFIX = '/api/ban-share';
+const VERSION = '0.1.0';
 
 const app = new Hono<AppEnv>();
 
@@ -74,6 +75,8 @@ app.route(`${API_PREFIX}/v1/bans`, bansRoutes);
 app.route(`${API_PREFIX}/v1/players`, playersRoutes);
 app.route(`${API_PREFIX}/v1/servers`, serversRoutes);
 app.route(`${API_PREFIX}/admin`, adminRoutes);
+// 维护者面板：https://wardogs.ksroido.art/ban-share（同一个 ADMIN_TOKEN）
+app.route('/ban-share', panelRoutes);
 
 app.notFound((c) =>
   c.json(
