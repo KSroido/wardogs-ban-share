@@ -16,7 +16,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -176,7 +176,10 @@ function buildTypeScript(version) {
   const unpacked = join(OUT_DIR, `.ts-unpack-${process.pid}`);
   rmSync(unpacked, { recursive: true, force: true });
   mkdirSync(unpacked, { recursive: true });
-  run('tar', ['-xzf', target, '-C', unpacked]);
+  // GNU tar reads "D:\path" as host:path, so hand it forward slashes.
+  const posix = (value) => value.split(sep).join('/');
+  const tarFlags = IS_WINDOWS ? ['--force-local'] : [];
+  run('tar', [...tarFlags, '-xzf', posix(target), '-C', posix(unpacked)]);
 
   const manifestPath = join(unpacked, 'package', 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -195,7 +198,7 @@ function buildTypeScript(version) {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   rmSync(target, { force: true });
-  run('tar', ['-czf', target, '-C', unpacked, 'package']);
+  run('tar', [...tarFlags, '-czf', posix(target), '-C', posix(unpacked), 'package']);
   rmSync(unpacked, { recursive: true, force: true });
   rmSync(staged, { recursive: true, force: true });
   return target;
