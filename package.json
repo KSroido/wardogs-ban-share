@@ -18,6 +18,8 @@
     "typecheck": "npm run typecheck --workspace packages/sdk-ts && npm run typecheck --workspace apps/api",
     "build:sdk": "npm run build --workspace packages/sdk-ts",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "release:check": "node scripts/release.mjs --no-build",
+    "release:build": "node scripts/release.mjs",
     "ci": "npm run check:secrets && npm run typecheck && npm run test"
   },
   "engines": {

@@ -253,3 +253,27 @@ npx wrangler d1 export wardogs_bans --remote --output backup-$(date +%F).sql
 - [ ] 至少建了一个成员服并拿到 key
 - [ ] `GET /health`、`GET /v1/servers`（带 key）均正常
 - [ ] 泄露过的 GitHub / Cloudflare token 已轮换
+
+## 10. 发布 SDK（GitHub Releases）
+
+三套 SDK 不上 npm / PyPI，产物挂在 GitHub Releases，用本机脚本打包。打包前必须跑完所有测试，脚本是唯一入口：
+
+```bash
+node scripts/release.mjs              # 门禁 + 打包到 dist/
+node scripts/release.mjs --no-build    # 只跑门禁，不产出产物
+node scripts/release.mjs --allow-dirty # 从未提交的工作区打包（本地调试用）
+```
+
+门禁顺序：`check:secrets` → `typecheck` → TS/API 测试 → Python `unittest discover` → Go `vet` + `gofmt -l` + `go test`。任何一步失败都会直接退出，`dist/` 不会被写入。没有 GitHub Actions，上传保持手动。
+
+依赖：Node ≥ 20；Python 用 `py -3` / `python3`，可用 `WDB_PYTHON` 指定；Go 在 `PATH` 上，或用 `WDB_GO` 指向二进制。
+
+产物：`wardogs-banlist-<ver>.tgz`、`wardogs_banlist-<ver>-py3-none-any.whl`、`wardogs_banlist-<ver>.tar.gz`、`wardogs-banlist-go-<ver>.zip`，外加 LF 换行的 `CHECKSUMS.txt`。脚本结束时打印 `gh release create` 命令和 README 用的三条安装链接。
+
+版本号以 `packages/sdk-ts/package.json` 为准；`sdks/python/pyproject.toml` 与 `wardogs_banlist/__init__.py` 对不上会直接报错。Go 模块在子目录里，还需要一个 `sdks/go/v<ver>` 的 tag，`go get ...@v<ver>` 才成立：
+
+```bash
+git tag -a v0.1.1 -m "v0.1.1" && git tag -a sdks/go/v0.1.1 -m "v0.1.1 for the Go module"
+git push origin v0.1.1 sdks/go/v0.1.1
+gh release create v0.1.1 --title "v0.1.1" --notes-file <notes> dist/*.tgz dist/*.whl dist/*.tar.gz dist/*.zip dist/CHECKSUMS.txt
+```

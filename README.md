@@ -126,6 +126,8 @@ hits, err := client.LookupSteamIDs(ctx, ids)
 
 三种语言的「提交」和「拉取」完整脚本在 [`examples/`](examples/)，环境变量是 `BANLIST_KEY`。
 
+打包发版走 `node scripts/release.mjs`：先跑完三套测试（TS/API、Python、Go）才写产物，任何一步失败都不出包。
+
 ## 本地白名单
 
 自己的服总有几个不想拦的老玩家，或者 bots 的副号。白名单放在你这边，服务端不知道它存在：整批命中时一次 HTTP 都不会发生，而且不会伪造任何 ban 数据，只标 `whitelisted: true`。TS 可以传数组或文件路径，文件每行一个 ID，`#` 开头当注释；Python 用 `set_whitelist`，Go 用 `NewWithWhitelistFile`。
