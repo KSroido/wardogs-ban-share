@@ -1,6 +1,6 @@
 {
   "name": "@wardogs/banlist",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript client for the Wardogs federated ban list",
   "license": "MIT",
   "type": "module",

@@ -35,7 +35,7 @@ class BanListClient:
         api_key: str,
         timeout: float = 15.0,
         retries: int = 2,
-        user_agent: str = "wardogs-banlist-python/0.1.0",
+        user_agent: str = "wardogs-banlist-python/0.1.1",
         whitelist: Optional[Union[str, Iterable[str]]] = None,
     ) -> None:
         if not base_url:

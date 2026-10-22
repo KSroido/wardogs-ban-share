@@ -79,7 +79,7 @@ export class BanListClient {
     this.fetchFn = fetchFn;
     this.timeoutMs = options.timeoutMs ?? 15_000;
     this.retries = Math.max(0, options.retries ?? 2);
-    this.userAgent = options.userAgent ?? 'wardogs-banlist-ts/0.1.0';
+    this.userAgent = options.userAgent ?? 'wardogs-banlist-ts/0.1.1';
     this.whitelist = new Whitelist(options.whitelist);
   }
 
