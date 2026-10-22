@@ -199,6 +199,65 @@ adminRoutes.post('/keys/:id/revoke', async (c) => {
   return c.json({ id, revoked_at: nowIso });
 });
 
+/**
+ * Issue a test key.
+ *
+ * Stored like any other key (hash + prefix) but with `is_test = 1` and no server
+ * binding. Every endpoint answers such a key from memory after that one lookup, so it
+ * can neither read real bans nor write anything. Revoke it with `/keys/:id/revoke`.
+ */
+adminRoutes.post('/test-keys', async (c) => {
+  const body = asRecord(await readOptionalJson(c));
+  const label = optionalString(body.label, 'label', 100);
+  const scopes = parseScopes(body.scopes);
+  const key = generateApiKey();
+  const keyId = newId('key');
+  const nowIso = new Date().toISOString();
+
+  await c.env.DB.prepare(
+    // api_keys 的 CHECK 要求 key 要么绑单服、要么绑 (owner, location) 组；
+    // 测试 key 用哨兵组占位，is_test 会在任何组逻辑之前短路，所以它永远不被解释。
+    `INSERT INTO api_keys (id, server_id, owner, location, prefix, key_hash, scopes, label, is_test, created_at)
+     VALUES (?, NULL, 'sandbox', 'sandbox', ?, ?, ?, ?, 1, ?)`,
+  )
+    .bind(keyId, keyPrefix(key), await hashSecret(key), scopes.join(' '), label, nowIso)
+    .run();
+
+  await logAudit(c.env.DB, {
+    actorType: 'admin',
+    actorId: 'admin',
+    action: 'key.issue',
+    target: keyId,
+    detail: { test: true, scopes, label },
+  });
+
+  return c.json(
+    {
+      id: keyId,
+      key,
+      prefix: keyPrefix(key),
+      server_id: null,
+      is_test: true,
+      scopes,
+      label,
+      created_at: nowIso,
+      warning:
+        'Test key: validate-only. It never reads real bans and never writes. Store it now, it cannot be recovered.',
+    },
+    201,
+  );
+});
+
+/** Test keys currently on the account, newest first. */
+adminRoutes.get('/test-keys', async (c) => {
+  const result = await c.env.DB.prepare(
+    `SELECT id, prefix, scopes, label, created_at, revoked_at, last_used_at
+       FROM api_keys WHERE is_test = 1 ORDER BY created_at DESC`,
+  ).all();
+
+  return c.json({ data: result.results ?? [] });
+});
+
 /** Emergency revocation: a maintainer can lift any server's ban. */
 adminRoutes.post('/bans/:id/revoke', async (c) => {
   const id = c.req.param('id');

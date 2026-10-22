@@ -349,3 +349,28 @@ X-Admin-Token: <ADMIN_TOKEN>
 - 客户端应忽略未知字段。
 - `GET /v1/bans` 的排序键是 `(updated_at, id)`；不要假设 `created_at` 顺序。
 - `cursor` 不透明，不要解析或跨版本缓存。
+
+## 测试 key（沙盒）
+
+想先验证接入代码、又不想碰真实数据时，找维护者要一枚**测试 key**。它和成员 key 存在同一张表（`api_keys.is_test = 1`），行为和成员 key 的区别只有一条：
+
+**认证查询这一条 SQL 之后，不再访问数据库。** 所有响应由 `apps/api/src/sandbox.ts` 在内存里合成，绝不读写真实 ban 记录。
+
+| 请求 | 测试 key 的行为 |
+|---|---|
+| `POST /v1/bans` | 校验规则与真实提交完全一致；通过返回 **HTTP 200**（真实提交是 201）和 `sandbox: true`，`created[]` 是合成记录，不落库、不查重、不记审计。校验失败仍逐条进 `errors[]`。同一批里重复的 SteamID 记为 `duplicates[]` |
+| `GET /v1/bans` | 只返回**一条**演示记录（`data` 长度最多 1，`has_more: false`）；`status` / `reason` / `steam_id` / `server` / `permanent` / `since` 过滤照常生效，方便核对客户端逻辑 |
+| `GET /v1/players/{id}` | 演示玩家返回 `server_count: 1` 和那条记录；其他 SteamID 一律返回零聚合 + 空 `bans` |
+| `GET /v1/players` | 排行榜只有演示玩家一个 |
+| `GET /v1/servers` | 只返回沙盒那台服，真实成员名单不返回 |
+| `POST /v1/bans/{id}/revoke` | 只有演示记录的 id 能撤销（合成响应）；其他 id 一律 `404` |
+
+沙盒里的服、玩家、记录内容都不是代码里的常量，由 Worker 的 `SANDBOX` 变量（JSON）在运行时提供；没配时测试 key 一律返回 `503 sandbox_unconfigured`。配置方法见 [DEPLOY.md](DEPLOY.md#11-测试-key-与-sandbox-变量)。
+
+签发与吊销：
+
+```bash
+node scripts/admin.mjs issue-test-key --label "给 xx 服试接"
+node scripts/admin.mjs test-keys
+node scripts/admin.mjs revoke-key --id key_...
+```

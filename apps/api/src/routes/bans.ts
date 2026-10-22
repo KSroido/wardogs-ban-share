@@ -9,6 +9,13 @@ import { newId } from '../ids';
 import { BAN_SELECT, banFromRow, deriveStatus, emptyReports, loadBan, type BanRow } from '../mappers';
 import { loadReports, refreshPlayer } from '../stats';
 import {
+  demoBan,
+  demoMatchesQuery,
+  requireSandboxConfig,
+  sandboxRevoke,
+  sandboxSubmit,
+} from '../sandbox';
+import {
   decodeCursor,
   encodeCursor,
   maxSubmitBatch,
@@ -42,6 +49,29 @@ bansRoutes.get('/', async (c) => {
   const query = parseListQuery(new URL(c.req.url).searchParams);
   const now = new Date();
   const nowIso = now.toISOString();
+
+  // 测试 key：只返回那一条演示记录，不查库。过滤条件照常生效，方便核对客户端逻辑。
+  if (auth.sandbox) {
+    const config = requireSandboxConfig(c.env.SANDBOX);
+    const data = demoMatchesQuery(config, {
+      status: query.status,
+      steamIds: query.steamIds ?? null,
+      reasons: query.reasons ?? null,
+      servers: query.servers ?? null,
+      permanent: query.permanent,
+      since: query.since,
+    })
+      ? [demoBan(config, nowIso)]
+      : [];
+
+    return c.json({
+      data,
+      next_cursor: null,
+      has_more: false,
+      server_time: nowIso,
+      sandbox: true,
+    });
+  }
 
   const clauses: string[] = [];
   const params: Array<string | number> = [];
@@ -121,8 +151,6 @@ bansRoutes.post('/', async (c) => {
 
   const body = await readJson(c);
   const rawBans = extractBans(body);
-  // 组 key 必须在请求里指明是哪台服（组里只有一台时自动取那一台）
-  const targetServerId = await resolveWriteServer(c.env.DB, auth, requestedServerId(body));
 
   if (rawBans.length === 0) {
     throw new ApiError(400, 'invalid_request', 'bans must contain at least one entry.');
@@ -133,6 +161,18 @@ bansRoutes.post('/', async (c) => {
 
   const now = new Date();
   const nowIso = now.toISOString();
+
+  // 测试 key：校验逻辑与真实提交完全一致，但不写库、不查重、不记审计，
+  // 直接回一份合成记录（HTTP 200 + sandbox 标记）。
+  if (auth.sandbox) {
+    const config = requireSandboxConfig(c.env.SANDBOX);
+    const result = sandboxSubmit(rawBans, config, nowIso);
+    return c.json({ ...result, sandbox: true }, 200);
+  }
+
+  // 组 key 必须在请求里指明是哪台服（组里只有一台时自动取那一台）
+  const targetServerId = await resolveWriteServer(c.env.DB, auth, requestedServerId(body));
+
   const db = c.env.DB;
 
   const created: Ban[] = [];
@@ -243,6 +283,14 @@ bansRoutes.post('/:id/revoke', async (c) => {
   requireScope(auth, 'bans:write');
 
   const id = c.req.param('id');
+
+  // 测试 key：只认那一条演示记录，撤销结果也是内存里合成的。
+  if (auth.sandbox) {
+    const config = requireSandboxConfig(c.env.SANDBOX);
+    const body = await readOptionalBody(c);
+    return c.json(sandboxRevoke(config, id, new Date().toISOString(), optionalReason(body)), 200);
+  }
+
   const row = await loadBan(c.env.DB, id);
 
   if (!row) throw new ApiError(404, 'not_found', 'Ban not found.');

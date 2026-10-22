@@ -68,6 +68,14 @@ const commands = {
         reason: flags.reason,
       }),
   },
+  'issue-test-key': {
+    help: 'issue a sandbox-only key: [--label <text>] [--scopes bans:read,bans:write]',
+    run: () => request('POST', '/test-keys', { label: flags.label, scopes: flags.scopes }),
+  },
+  'test-keys': {
+    help: 'list test keys (sandbox-only, never touch real data)',
+    run: () => request('GET', '/test-keys'),
+  },
   reindex: {
     help: 'rebuild player_stats from the ban records',
     run: () => request('POST', '/reindex'),
@@ -143,17 +151,22 @@ async function request(method, path, body) {
 }
 
 function print(name, payload) {
-  if (name === 'issue-key' && payload?.key) {
-    console.log('\n  API key (shown once, store it now):\n');
+  if ((name === 'issue-key' || name === 'issue-test-key') && payload?.key) {
+    const isTest = payload.is_test === true;
+    console.log(
+      isTest
+        ? '\n  TEST key (sandbox only: validate + one demo record, never real data):\n'
+        : '\n  API key (shown once, store it now):\n',
+    );
     console.log(`    ${payload.key}\n`);
-    console.log(`  server: ${payload.server_id}`);
+    console.log(`  server: ${payload.server_id ?? '(sandbox)'}`);
     console.log(`  scopes: ${payload.scopes.join(' ')}`);
     console.log(`  key id: ${payload.id}\n`);
     console.log('  If it leaks: node scripts/admin.mjs revoke-key --id ' + payload.id);
     return;
   }
 
-  if (name === 'servers' || name === 'keys' || name === 'audit') {
+  if (name === 'servers' || name === 'keys' || name === 'audit' || name === 'test-keys') {
     const rows = payload?.data ?? [];
     console.log(`\n${rows.length} row(s)\n`);
     console.table(rows);

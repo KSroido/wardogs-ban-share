@@ -50,6 +50,8 @@ curl -X POST https://wardogs.ksroido.art/api/ban-share/v1/bans \
 2. 有封禁就往 `POST /v1/bans` 推。一次最多 100 条，带 `external_case_id` 就天然幂等，网络重试不会写出第二条。
 3. 玩家进服前查一次 `GET /v1/bans?steam_id=...`，一次最多 50 个 ID。查到 `active` 的记录，再看 `reports.server_count` 决定怎么处理。
 
+想先跑通再接真实数据，找维护者要一枚**测试 key**：提交照常校验但只回 HTTP 200 和合成记录，拉取只给你一条演示记录，`/v1/servers` 也只返回沙盒那台服。这类请求除认证那一条查询外完全不碰数据库，详情见 [docs/API.md](docs/API.md#测试-key沙盒)。
+
 增量同步用 `since` 加游标翻页：
 
 ```bash

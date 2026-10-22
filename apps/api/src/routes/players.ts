@@ -4,6 +4,7 @@ import { requireApiKey, requireScope } from '../auth';
 import { ApiError } from '../errors';
 import { BAN_SELECT, banFromRow, emptyReports, type BanRow } from '../mappers';
 import { computePlayerReports, loadReports, reportsFromPlayerStatsRow, type PlayerStatsRow } from '../stats';
+import { demoBan, emptyReports as sandboxEmptyReports, requireSandboxConfig, sandboxReports } from '../sandbox';
 import {
   parseLimit,
   parseOffset,
@@ -36,6 +37,18 @@ playersRoutes.get('/', async (c) => {
   const limit = parseLimit(params.get('limit'), 50, 200);
   const offset = parseOffset(params.get('offset'));
 
+  // 测试 key：排行榜只有沙盒那一个玩家，绝不查询 player_stats。
+  if (auth.sandbox) {
+    const config = requireSandboxConfig(c.env.SANDBOX);
+    return c.json({
+      data: offset === 0 ? [sandboxReports(config, new Date().toISOString())] : [],
+      total: 1,
+      limit,
+      offset,
+      sandbox: true,
+    });
+  }
+
   const result = await c.env.DB.prepare(
     `SELECT * FROM player_stats ORDER BY ${SORT_COLUMNS[sort]} DESC, steam_id ASC LIMIT ? OFFSET ?`,
   )
@@ -64,6 +77,29 @@ playersRoutes.get('/:steamId', async (c) => {
   const params = new URL(c.req.url).searchParams;
   const status = parseStatus(params.get('status'), 'all');
   const limit = parseLimit(params.get('limit'), 200, 500);
+
+  // 测试 key：只认识沙盒里那个玩家，其他一律返回空聚合。
+  if (auth.sandbox) {
+    const config = requireSandboxConfig(c.env.SANDBOX);
+    const nowIso = new Date().toISOString();
+
+    if (steamId !== config.steamId) {
+      return c.json({
+        steam_id: steamId,
+        reports: sandboxEmptyReports(steamId, nowIso),
+        bans: [],
+        sandbox: true,
+      });
+    }
+
+    return c.json({
+      steam_id: steamId,
+      reports: sandboxReports(config, nowIso),
+      bans: status === 'revoked' ? [] : [demoBan(config, nowIso)],
+      sandbox: true,
+      limit,
+    });
+  }
 
   const now = new Date();
   const nowIso = now.toISOString();

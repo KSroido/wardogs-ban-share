@@ -16,6 +16,8 @@ interface KeyRow {
   scopes: string;
   revoked_at: string | null;
   last_used_at: string | null;
+  /** 测试 key：认证之后一切响应由 src/sandbox.ts 在内存里合成 */
+  is_test: number;
   server_name: string | null;
   server_status: string | null;
 }
@@ -41,7 +43,7 @@ export async function requireApiKey(c: Context<AppEnv>): Promise<AuthContext> {
   // The prefix is only an index; the SHA-256 comparison is what authenticates.
   const rows = await c.env.DB.prepare(
     `SELECT k.id, k.server_id, k.owner, k.location, k.key_hash, k.scopes, k.revoked_at, k.last_used_at,
-            s.name AS server_name, s.status AS server_status
+            k.is_test, s.name AS server_name, s.status AS server_status
        FROM api_keys k
        LEFT JOIN servers s ON s.id = k.server_id
       WHERE k.prefix = ?`,
@@ -58,6 +60,21 @@ export async function requireApiKey(c: Context<AppEnv>): Promise<AuthContext> {
   if (row.revoked_at) {
     throw new ApiError(401, 'key_revoked', 'This API key has been revoked.');
   }
+
+  // 测试 key：查询到此行为止。既不碰服务器状态/组在册检查，也不写 last_used_at，
+  // 后续响应全部由 src/sandbox.ts 在内存里合成（见各路由的 sandbox 分支）。
+  if (row.is_test) {
+    return {
+      keyId: row.id,
+      serverId: null,
+      serverName: null,
+      owner: null,
+      location: null,
+      scopes: row.scopes.split(/\s+/).filter(Boolean),
+      sandbox: true,
+    };
+  }
+
   if (row.server_id) {
     if (row.server_status !== 'active') {
       throw new ApiError(403, 'server_defederated', 'This server has been removed from the federation.');
@@ -83,6 +100,7 @@ export async function requireApiKey(c: Context<AppEnv>): Promise<AuthContext> {
     owner: row.owner,
     location: row.location,
     scopes: row.scopes.split(/\s+/).filter(Boolean),
+    sandbox: false,
   };
 }
 

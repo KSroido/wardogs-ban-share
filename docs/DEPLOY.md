@@ -277,3 +277,28 @@ git tag -a v0.1.1 -m "v0.1.1" && git tag -a sdks/go/v0.1.1 -m "v0.1.1 for the Go
 git push origin v0.1.1 sdks/go/v0.1.1
 gh release create v0.1.1 --title "v0.1.1" --notes-file <notes> dist/*.tgz dist/*.whl dist/*.tar.gz dist/*.zip dist/CHECKSUMS.txt
 ```
+
+## 11. 测试 key 与 `SANDBOX` 变量
+
+测试 key 用于让接入方先把客户端跑通，不碰真实数据（行为见 [API.md](API.md#测试-key沙盒)）。它需要两个前提：
+
+1. **迁移 `0005_test_api_keys.sql`** 已应用（`api_keys.is_test`）。
+2. Worker 上存在变量 **`SANDBOX`**，内容是沙盒的展示身份。它是运行时配置，仓库里只有变量名，没有取值：
+
+```bash
+npx wrangler secret put SANDBOX --config apps/api/wrangler.jsonc
+# 粘贴一行 JSON：
+{"server":{"id":"sandbox","name":"Sandbox Test Server"},"steam_id":"76561198000000000","ban":{"reason":"cheat","permanent":true,"player_name":"sandbox_player","note":"Demo record","evidence_url":"https://example.com/demo.png","external_case_id":"sandbox-demo-1","created_at":"2026-01-01T00:00:00.000Z"}}
+```
+
+`server.id` 必须是 2–24 位小写 slug，`steam_id` 必须是 `7656119` 开头的 17 位 SteamID64，`ban.reason` 必须是 8 个 reason 之一；写错不会悄悄兜底，测试 key 会直接 `503 sandbox_unconfigured` / `500 sandbox_misconfigured`。
+
+签发（写进 `api_keys`，带 `is_test = 1`，没有服务器绑定）：
+
+```bash
+node scripts/admin.mjs issue-test-key --label "给 xx 服试接"
+node scripts/admin.mjs test-keys          # 列出所有测试 key
+node scripts/admin.mjs revoke-key --id key_...
+```
+
+测试 key 的每一条请求只会跑一条 SQL：`SELECT ... FROM api_keys WHERE prefix = ?`。之后的服务器状态检查、组在册检查、`last_used_at` 更新、ban 读写、审计写入全部跳过，因此它既拿不到真实名单，也不可能改库。

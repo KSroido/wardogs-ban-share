@@ -7,6 +7,10 @@ export interface AuthContext {
   owner: string | null;
   location: string | null;
   scopes: string[];
+  /**
+   * 测试 key：认证查询之后不再访问数据库，所有响应由 src/sandbox.ts 在内存里合成。
+   */
+  sandbox: boolean;
 }
 
 export interface Env {
@@ -20,6 +24,12 @@ export interface Env {
   DB: D1Database;
   ADMIN_TOKEN?: string;
   ENVIRONMENT?: string;
+  /**
+   * Sandbox identity for test keys, resolved at runtime. JSON:
+   * {"server":{"id":"…","name":"…"},"steam_id":"7656119…","ban":{…}}.
+   * Unset means test keys answer 503 instead of inventing an identity.
+   */
+  SANDBOX?: string;
 }
 
 export type AppVariables = {
