@@ -4,10 +4,10 @@ Wardogs 联合 ban 名单的 TypeScript 客户端。零依赖，Node ≥ 18 / �
 
 ## 安装
 
-当前通过 workspace 使用（尚未发布到 npm）：
+没有发到 npm。从本仓库的 release 装：
 
 ```bash
-npm install
+npm i https://github.com/KSroido/wardogs-ban-share/releases/download/v0.1.1/wardogs-banlist-0.1.1.tgz
 ```
 
 ```ts

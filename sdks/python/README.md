@@ -1,6 +1,10 @@
 # wardogs-banlist (Python)
 
-Standard library only — `pip install wardogs-banlist` or copy the package.
+Standard library only. Install the wheel from this repo's release:
+
+```bash
+pip install https://github.com/KSroido/wardogs-ban-share/releases/download/v0.1.1/wardogs_banlist-0.1.1-py3-none-any.whl
+```
 
 ```python
 from wardogs_banlist import BanListClient, BanListError

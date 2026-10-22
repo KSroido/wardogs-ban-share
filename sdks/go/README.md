@@ -1,8 +1,10 @@
 # wardogs-banlist (Go)
 
 ```bash
-go get github.com/KSroido/wardogs-ban-share/sdks/go/banlist
+go get github.com/KSroido/wardogs-ban-share/sdks/go/banlist@v0.1.1
 ```
+
+离线环境可以下 release 里的 `wardogs-banlist-go-0.1.1.zip`，解压后在 `go.mod` 里加 `replace`。
 
 ```go
 import (
