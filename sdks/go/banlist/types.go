@@ -6,11 +6,11 @@ import "fmt"
 type Reason string
 
 const (
-	ReasonCheat     Reason = "cheat"
-	ReasonRulebreak Reason = "rulebreak"
-	ReasonChatTroll Reason = "chattroll"
-	ReasonGameTroll Reason = "gametroll"
-	ReasonRacism    Reason = "racism"
+	ReasonCheat                   Reason = "cheat"
+	ReasonRulebreak               Reason = "rulebreak"
+	ReasonChatTroll               Reason = "chattroll"
+	ReasonGameTroll               Reason = "gametroll"
+	ReasonRacism                  Reason = "racism"
 	ReasonForeignOfServerLocation Reason = "foreignofserverlocation"
 	// ReasonForeigner is the pre-0.2 name of ReasonForeignOfServerLocation; deprecated.
 	ReasonForeigner Reason = ReasonForeignOfServerLocation
@@ -50,16 +50,16 @@ type Server struct {
 // PlayerReports is the per-SteamID aggregate: how many distinct servers
 // reported this player, how many bans are in force, and the reason breakdown.
 type PlayerReports struct {
-	SteamID           string       `json:"steam_id"`
-	ServerCount       int          `json:"server_count"`
-	ActiveServerCount int          `json:"active_server_count"`
-	BanCount          int          `json:"ban_count"`
-	ActiveBanCount    int          `json:"active_ban_count"`
-	PermanentCount    int          `json:"permanent_count"`
+	SteamID           string         `json:"steam_id"`
+	ServerCount       int            `json:"server_count"`
+	ActiveServerCount int            `json:"active_server_count"`
+	BanCount          int            `json:"ban_count"`
+	ActiveBanCount    int            `json:"active_ban_count"`
+	PermanentCount    int            `json:"permanent_count"`
 	ReasonCounts      map[Reason]int `json:"reason_counts"`
-	FirstReportedAt   *string      `json:"first_reported_at"`
-	LastReportedAt    *string      `json:"last_reported_at"`
-	UpdatedAt         string       `json:"updated_at"`
+	FirstReportedAt   *string        `json:"first_reported_at"`
+	LastReportedAt    *string        `json:"last_reported_at"`
+	UpdatedAt         string         `json:"updated_at"`
 }
 
 type Ban struct {
