@@ -293,13 +293,17 @@ class BanListClient:
 
             except urlerror.HTTPError as exc:
                 raw = exc.read().decode("utf-8", "replace")
+                # Release the response now; the retry path below would otherwise leave
+                # the HTTPError (and its socket) to the garbage collector.
+                err_status, err_headers = exc.code, exc.headers
+                exc.close()
                 payload = _parse_json(raw)
 
-                if (exc.code == 429 or exc.code >= 500) and attempt < self.retries:
-                    time.sleep(_retry_delay(exc.headers, attempt))
+                if (err_status == 429 or err_status >= 500) and attempt < self.retries:
+                    time.sleep(_retry_delay(err_headers, attempt))
                     continue
 
-                raise _error_from(exc.code, payload, exc.headers) from exc
+                raise _error_from(err_status, payload, err_headers) from exc
 
             except (urlerror.URLError, TimeoutError, OSError) as exc:
                 last_error = exc
