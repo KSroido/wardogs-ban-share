@@ -293,7 +293,7 @@ npx wrangler secret put SANDBOX --config apps/api/wrangler.jsonc
 
 `server.id` 必须是 2–24 位小写 slug，`steam_id` 必须是 `7656119` 开头的 17 位 SteamID64，`ban.reason` 必须是 8 个 reason 之一；写错不会悄悄兜底，测试 key 会直接 `503 sandbox_unconfigured` / `500 sandbox_misconfigured`。
 
-签发（写进 `api_keys`，带 `is_test = 1`，没有服务器绑定）：
+签发方式两种：面板 `/ban-share` 的「测试 key」卡片里填个备注点生成，或者命令行（同样写进 `api_keys`，带 `is_test = 1`，没有服务器绑定）：
 
 ```bash
 node scripts/admin.mjs issue-test-key --label "给 xx 服试接"

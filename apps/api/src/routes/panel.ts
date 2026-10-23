@@ -178,6 +178,43 @@ panelRoutes.post('/keys', async (c) => {
   return c.html(issuedPage(server.name, scopeText, key, scopes, label), 201);
 });
 
+/**
+ * 生成测试 key：沙盒专用。
+ *
+ * 跟成员 key 存同一张表（is_test = 1），但请求除认证那一条查询外不碰数据库 ——
+ * 提交只校验并回合成记录，拉取只给一条演示数据。哨兵组 ('sandbox','sandbox')
+ * 只是为了满足 api_keys 的 CHECK 约束，is_test 会在任何组逻辑之前短路。
+ */
+panelRoutes.post('/test-keys', async (c) => {
+  if (!(await isAdmin(c))) return c.html(loginPage('登录已过期，请重新登录'), 401);
+
+  const body = await c.req.parseBody();
+  const label = str(body.label).trim().slice(0, 100) || null;
+  const db = c.env.DB;
+  const key = generateApiKey();
+  const keyId = newId('key');
+  const nowIso = new Date().toISOString();
+  const scopes = ['bans:read', 'bans:write'];
+
+  await db
+    .prepare(
+      `INSERT INTO api_keys (id, server_id, owner, location, prefix, key_hash, scopes, label, is_test, created_at)
+       VALUES (?, NULL, 'sandbox', 'sandbox', ?, ?, ?, ?, 1, ?)`,
+    )
+    .bind(keyId, keyPrefix(key), await hashSecret(key), scopes.join(' '), label, nowIso)
+    .run();
+
+  await logAudit(db, {
+    actorType: 'admin',
+    actorId: 'panel',
+    action: 'key.issue',
+    target: keyId,
+    detail: { test: true, scopes, label },
+  });
+
+  return c.html(testIssuedPage(key, label, Boolean(c.env.SANDBOX)), 201);
+});
+
 /** 改管理方 / 地理位置：建服时填错、或管理方转移时用；组 key 跟着 (owner, location) 走，无需重发 */
 panelRoutes.post('/servers/update', async (c) => {
   if (!(await isAdmin(c))) return c.html(loginPage('登录已过期，请重新登录'), 401);
@@ -356,10 +393,10 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
 
   const keys = await db
     .prepare(
-      `SELECT k.id, k.server_id, k.owner, k.location, k.prefix, k.scopes, k.label, k.created_at, k.last_used_at, k.revoked_at
+      `SELECT k.id, k.server_id, k.owner, k.location, k.prefix, k.scopes, k.label, k.created_at, k.last_used_at, k.revoked_at, k.is_test
          FROM api_keys k ORDER BY k.created_at DESC LIMIT 50`,
     )
-    .all<{ id: string; server_id: string | null; owner: string | null; location: string | null; prefix: string; scopes: string; label: string | null; created_at: string; last_used_at: string | null; revoked_at: string | null }>();
+    .all<{ id: string; server_id: string | null; owner: string | null; location: string | null; prefix: string; scopes: string; label: string | null; created_at: string; last_used_at: string | null; revoked_at: string | null; is_test: number }>();
 
   const bans = await db
     .prepare(
@@ -418,9 +455,11 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
       (k) => `<tr>
         <td><code>wdb_${esc(k.prefix)}…</code></td>
         <td>${
-          k.server_id
-            ? `<code>${esc(k.server_id)}</code>`
-            : `<span class="ok">组</span> <span class="muted">${esc(k.owner ?? '')} @ ${esc(k.location ?? '')}</span>`
+          k.is_test
+            ? '<span class="warn">测试</span> <span class="muted">沙盒，只读演示数据</span>'
+            : k.server_id
+              ? `<code>${esc(k.server_id)}</code>`
+              : `<span class="ok">组</span> <span class="muted">${esc(k.owner ?? '')} @ ${esc(k.location ?? '')}</span>`
         }</td>
         <td>${esc(k.scopes)}</td>
         <td>${esc(k.label ?? '—')}</td>
@@ -512,6 +551,24 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
      </section>
 
      <section class="card">
+       <h2>测试 key</h2>
+       <p class="muted small">
+         给接入方试跑用：提交照常校验，但只回 <code>200</code> 和合成记录；拉取只返回一条演示数据；
+         <code>/v1/servers</code> 只返回沙盒那台服。除认证那一条查询外不访问数据库，拿不到真实名单，也写不进任何东西。
+         吊销就在上面的 key 列表里操作。
+       </p>
+       ${
+         c.env.SANDBOX
+           ? ''
+           : '<p class="err">没配 <code>SANDBOX</code> 变量，生成的测试 key 会一律返回 <code>503 sandbox_unconfigured</code>。</p>'
+       }
+       <form class="inline" method="post" action="${SESSION_PATH}/test-keys">
+         <input name="label" placeholder="备注（发给谁，可选）" size="26">
+         <button type="submit">生成测试 key</button>
+       </form>
+     </section>
+
+     <section class="card">
        <h2>最近 ban</h2>
        <table>
          <thead><tr><th>steamId</th><th>reason</th><th>上报服</th><th>时长</th><th>状态</th><th>更新</th><th>操作</th></tr></thead>
@@ -541,6 +598,32 @@ function issuedPage(serverName: string, serverId: string, key: string, scopes: s
        <pre class="code">curl -H "Authorization: Bearer ${esc(key)}" \\
   https://wardogs.ksroido.art/api/ban-share/v1/players/76561198000000000</pre>
        <p class="muted small">提交 ban：<code>POST /api/ban-share/v1/bans</code>，读：<code>GET /api/ban-share/v1/bans</code>。完整契约见仓库 <code>docs/openapi.yaml</code>。</p>
+       <p><a href="${SESSION_PATH}">← 回面板</a></p>
+     </div>`,
+  );
+}
+
+function testIssuedPage(key: string, label: string | null, sandboxConfigured: boolean): string {
+  return layout(
+    '测试 key 已生成',
+    `<div class="card">
+       <h2>测试 key 已生成</h2>
+       <p class="err">明文只显示这一次（库里只存 SHA-256）。现在复制走。</p>
+       <pre class="key">${esc(key)}</pre>
+       <p class="muted">用途：沙盒${label ? `　备注：${esc(label)}` : ''}　scope：<code>bans:read bans:write</code></p>
+       ${
+         sandboxConfigured
+           ? ''
+           : '<p class="err">这个部署还没配 <code>SANDBOX</code> 变量，这枚 key 现在用会返回 <code>503 sandbox_unconfigured</code>。</p>'
+       }
+       <h3>这枚 key 能看到什么</h3>
+       <ul class="muted">
+         <li>提交：校验规则和真实提交一致，返回 <code>200</code> 加合成记录，不落库</li>
+         <li>拉取：只有一条演示记录，过滤条件照常生效</li>
+         <li><code>/v1/servers</code>：只有沙盒那台服</li>
+         <li>撤销：只认演示记录的 id</li>
+       </ul>
+       <p class="muted small">真实 ban 名单和它完全隔离。停用：回面板在 key 列表里点「吊销」。</p>
        <p><a href="${SESSION_PATH}">← 回面板</a></p>
      </div>`,
   );

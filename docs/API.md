@@ -367,7 +367,7 @@ X-Admin-Token: <ADMIN_TOKEN>
 
 沙盒里的服、玩家、记录内容都不是代码里的常量，由 Worker 的 `SANDBOX` 变量（JSON）在运行时提供；没配时测试 key 一律返回 `503 sandbox_unconfigured`。配置方法见 [DEPLOY.md](DEPLOY.md#11-测试-key-与-sandbox-变量)。
 
-签发与吊销：
+签发与吊销（维护者面板 `/ban-share` 的「测试 key」卡片也能直接生成，吊销在 key 列表里）：
 
 ```bash
 node scripts/admin.mjs issue-test-key --label "给 xx 服试接"
