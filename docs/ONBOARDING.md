@@ -6,18 +6,18 @@
 
 ## 1. 申请
 
-打开 [服务器申请表](https://github.com/KSroido/wardogs-ban-share/issues/new?template=server-application.yml)，填写：
+打开 [申请表（申请 API key）](https://github.com/KSroido/wardogs-ban-share/issues/new?template=server-application.yml)，填写：
 
 | 字段 | 说明 |
 |---|---|
-| 服务器名称 | 展示在 ban 记录里的名字，例如 `Wardogs Main` |
-| 服务器 ID（slug） | 小写字母、数字、短横线，2–31 位，例如 `wardogs-main`。**创建后不能改** |
-| 管理方 | 运营这组服的主体（同一个管理方可能有多台服），例如 `wardogs` |
-| 服务器地理位置 | **必填**：服务器实际所在地，例如 `cn`、`eu-frankfurt`、`us-west`。其它服读 ban 时能看到这个位置，用来判断是不是「外籍服」（`foreignofserverlocation`） |
-| 联系方式 | Discord / QQ / 邮箱，用于审核和密钥下发 |
-| 大致在线人数 | 帮助判断接入规模 |
-| 管理规范 | 你们的封禁标准、申诉渠道；有链接最好 |
-| 申请理由 | 为什么需要联合名单，能提供什么 |
+| 服务器简短名称（品牌名） | 展示在 ban 记录里的名字，2–64 字，例如 `Wardogs 社区服` |
+| 管理方 SteamID64 | 17 位 SteamID64，代表运营这组服的人；会写成服务器的 `owner`，同一管理方同一位置的多台服共用一个 key |
+| 服务器 ID（slug） | 2–24 位小写字母、数字、短横线，例如 `wardogs-main`。**创建后不能改** |
+| 服务器地理位置 | 服务器实际所在地，例如 `cn`、`eu-frankfurt`、`us-west`。其它服读 ban 时能看到，用来判断是不是「外籍服」（`foreignofserverlocation`）；换位置要单独申请 key |
+| 服务器备注 | 选填。会当作 `/v1/servers` 的 `note` 公开，可以写玩法、群号、Discord 邀请，最多 500 字 |
+| 联系方式 | QQ / Discord / 邮箱，**要能私聊到本人**，审核结果和密钥从这里发 |
+
+表末尾还有三条必勾的确认（服务器真实性、密钥保管方式、误封自负）。
 
 **不要在 Issue 里贴 API key、密码、token。** key 由仓库维护者（<https://github.com/KSroido/wardogs-ban-share>）审核通过后私密下发。
 
