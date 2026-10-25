@@ -232,17 +232,22 @@ panelRoutes.post('/servers/update', async (c) => {
     return c.html(await dashboardPage(c, `管理方/位置不合法：${esc((error as Error).message)}`), 400);
   }
 
-  const row = await c.env.DB.prepare('SELECT id, owner, location FROM servers WHERE id = ?')
+  const row = await c.env.DB.prepare('SELECT id, owner, location, note FROM servers WHERE id = ?')
     .bind(id)
-    .first<{ id: string; owner: string | null; location: string | null }>();
+    .first<{ id: string; owner: string | null; location: string | null; note: string | null }>();
   if (!row) return c.html(await dashboardPage(c, '没有这个服务器'), 404);
-  if (row.owner === owner && row.location === location) {
-    return c.html(await dashboardPage(c, '管理方/位置没变'), 200);
+
+  // 备注：表单里带了这个字段才改（空字符串 = 清空），不带就保持原值
+  const hasNote = body.note !== undefined || typeof body.note === 'string';
+  const note = hasNote ? str(body.note).trim().slice(0, 500) || null : row.note;
+
+  if (row.owner === owner && row.location === location && note === row.note) {
+    return c.html(await dashboardPage(c, '管理方 / 位置 / 备注都没变'), 200);
   }
 
   const nowIso = new Date().toISOString();
-  await c.env.DB.prepare('UPDATE servers SET owner = ?, location = ?, updated_at = ? WHERE id = ?')
-    .bind(owner, location, nowIso, id)
+  await c.env.DB.prepare('UPDATE servers SET owner = ?, location = ?, note = ?, updated_at = ? WHERE id = ?')
+    .bind(owner, location, note, nowIso, id)
     .run();
 
   await logAudit(c.env.DB, {
@@ -250,11 +255,14 @@ panelRoutes.post('/servers/update', async (c) => {
     actorId: 'panel',
     action: 'server.group_update',
     target: id,
-    detail: { from: { owner: row.owner, location: row.location }, to: { owner, location } },
+    detail: {
+      from: { owner: row.owner, location: row.location, note: row.note },
+      to: { owner, location, note },
+    },
   });
 
   return c.html(
-    await dashboardPage(c, `已更新 ${esc(id)}：管理方=${esc(owner)}，位置=${esc(location)}（组 key 自动跟着走）`),
+    await dashboardPage(c, `已更新 ${esc(id)}：管理方=${esc(owner)}，位置=${esc(location)}${hasNote ? `，备注=${esc(note ?? '（空）')}` : ''}（组 key 自动跟着走）`),
     200,
   );
 });
@@ -418,6 +426,9 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
         <td>${esc(s.name)}</td>
         <td><code>${esc(s.location ?? '—')}</code></td>
         <td class="muted">${esc(s.owner ?? '—')}</td>
+        <td class="muted" title="${esc(s.note ?? '')}">${
+          s.note ? esc(s.note.length > 28 ? `${s.note.slice(0, 28)}…` : s.note) : '—'
+        }</td>
         <td>${s.status === 'active' ? '<span class="ok">active</span>' : '<span class="warn">defederated</span>'}</td>
         <td class="num">${s.active_keys}</td>
         <td class="num">${s.ban_count}</td>
@@ -442,6 +453,7 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
               <input type="hidden" name="server_id" value="${esc(s.id)}">
               <input name="owner" value="${esc(s.owner ?? '')}" placeholder="管理方" size="10" required>
               <input name="location" value="${esc(s.location ?? '')}" placeholder="位置" size="8" required>
+              <input name="note" value="${esc(s.note ?? '')}" placeholder="备注（会公开在 /v1/servers）" size="24">
               <button type="submit">保存</button>
             </form>
           </details>
@@ -537,8 +549,8 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
      <section class="card">
        <h2>成员服</h2>
        <table>
-         <thead><tr><th>id</th><th>名字</th><th>位置</th><th>管理方</th><th>状态</th><th>有效 key</th><th>ban 数</th><th>发 key</th><th>改组</th></tr></thead>
-         <tbody>${serverRows || `<tr><td colspan="9" class="muted">还没有成员服</td></tr>`}</tbody>
+         <thead><tr><th>id</th><th>名字</th><th>位置</th><th>管理方</th><th>备注</th><th>状态</th><th>有效 key</th><th>ban 数</th><th>发 key</th><th>编辑</th></tr></thead>
+         <tbody>${serverRows || `<tr><td colspan="10" class="muted">还没有成员服</td></tr>`}</tbody>
        </table>
      </section>
 
@@ -677,10 +689,27 @@ function layout(title: string, body: string): string {
   .err { color: #f08a8a; }
   .notice { color: #8ef0b6; }
   a { color: #7fc7ff; }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+            max-width: 1100px; margin: 0 0 20px; }
+  .topbar h1 { margin: 0 0 4px; }
+  .topbar p { margin: 0; }
+  a.gh { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; flex: none;
+         border: 1px solid #232833; border-radius: 8px; background: #151922;
+         color: #c9d1d9; text-decoration: none; font-size: 13px; white-space: nowrap; }
+  a.gh:hover { background: #1b212b; border-color: #35404f; color: #fff; }
+  a.gh svg { flex: none; }
 </style>
 </head><body>
-<h1>WARDogs 联合 Ban</h1>
-<p class="muted small" style="margin:0 0 20px">联邦封禁名单 · 维护者面板</p>
+<header class="topbar">
+  <div>
+    <h1>WARDogs 联合 Ban</h1>
+    <p class="muted small">联邦封禁名单 · 维护者面板</p>
+  </div>
+  <a class="gh" href="https://github.com/KSroido/wardogs-ban-share" target="_blank" rel="noopener noreferrer" title="GitHub 仓库：KSroido/wardogs-ban-share">
+    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+    <span>GitHub</span>
+  </a>
+</header>
 ${body}
 </body></html>`;
 }
