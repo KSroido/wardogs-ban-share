@@ -26,6 +26,9 @@
   "triggers": {
     "crons": ["0 4 * * *"]
   },
+  "kv_namespaces": [
+    { "binding": "GUARD", "id": "ae627c467a694af0a0bef3b97b96d58c" }
+  ],
   "d1_databases": [
     {
       "binding": "DB",

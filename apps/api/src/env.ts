@@ -22,6 +22,8 @@ export interface Env {
    * deliberately separate from any existing anti-cheat database.
    */
   DB: D1Database;
+  /** 用量守卫的共享 KV：halt:<service> 存在时本服务拒绝请求（Cloudflare 没有花钱刹车，自己拉） */
+  GUARD?: KVNamespace;
   ADMIN_TOKEN?: string;
   ENVIRONMENT?: string;
   /**

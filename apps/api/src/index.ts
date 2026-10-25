@@ -14,6 +14,20 @@ const VERSION = '0.1.0';
 
 const app = new Hono<AppEnv>();
 
+/**
+ * 用量守卫：wardogs-guard 在超额 $1 时往 KV 写 halt:<service>。
+ * 这里读一次（KV 读很便宜），命中就整体 503 —— 不再产生新的请求/D1 行数。
+ * 健康检查放行，方便外部监控还知道服务活着。
+ */
+async function guardHalt(env: AppEnv['Bindings']): Promise<string | null> {
+  try {
+    const [w, d] = await Promise.all([env.GUARD?.get('halt:workers'), env.GUARD?.get('halt:d1')]);
+    return w ?? d ?? null;
+  } catch {
+    return null; // 守卫不可用不能连累业务
+  }
+}
+
 // Every response carries a request id, including errors, so a member server can
 // quote one line when asking the maintainers for help.
 app.use('*', async (c, next) => {
@@ -47,6 +61,21 @@ app.get('/', (c) =>
     docs: 'https://github.com/KSroido/wardogs-ban-share',
   }),
 );
+
+app.use('*', async (c, next) => {
+  if (c.req.path === '/health' || c.req.path === `${API_PREFIX}/health`) return next();
+  const stopped = await guardHalt(c.env);
+  if (stopped) {
+    return c.json(
+      {
+        error: { code: 'service_halted', message: 'Usage guard tripped; service paused.', detail: stopped },
+        request_id: c.get('requestId') ?? null,
+      },
+      503,
+    );
+  }
+  return next();
+});
 
 app.get('/health', (c) => c.json({ ok: true, time: new Date().toISOString(), version: VERSION }));
 app.get(`${API_PREFIX}/health`, (c) =>
