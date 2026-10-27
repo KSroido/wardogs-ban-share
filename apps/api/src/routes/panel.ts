@@ -122,9 +122,9 @@ panelRoutes.post('/keys', async (c) => {
 
   const db = c.env.DB;
   const server = await db
-    .prepare('SELECT id, name, owner, location, status FROM servers WHERE id = ?')
+    .prepare('SELECT id, name, owner, location, status, note FROM servers WHERE id = ?')
     .bind(serverId)
-    .first<{ id: string; name: string; owner: string | null; location: string | null; status: string }>();
+    .first<{ id: string; name: string; owner: string | null; location: string | null; status: string; note: string | null }>();
 
   if (!server) return c.html(await dashboardPage(c, '没有这个服务器'), 404);
   if (server.status !== 'active') {
@@ -134,6 +134,9 @@ panelRoutes.post('/keys', async (c) => {
   if (asGroup && (!server.owner || !server.location)) {
     return c.html(await dashboardPage(c, '这台服没有管理方/位置，不能发组 key'), 409);
   }
+
+  // 没填备注就用服务器备注，key 列表里不用显示空值
+  const finalLabel = label || server.note?.trim().slice(0, 100) || null;
 
   const key = generateApiKey();
   const keyId = newId('key');
@@ -152,7 +155,7 @@ panelRoutes.post('/keys', async (c) => {
       keyPrefix(key),
       await hashSecret(key),
       scopes.join(' '),
-      label,
+      finalLabel,
       nowIso,
     )
     .run();
@@ -168,14 +171,14 @@ panelRoutes.post('/keys', async (c) => {
       owner: asGroup ? server.owner : null,
       location: asGroup ? server.location : null,
       scopes,
-      label,
+      label: finalLabel,
     },
   });
 
   const scopeText = asGroup
     ? `${server.owner} @ ${server.location}（组 key，覆盖该管理方该位置下所有服）`
     : server.id;
-  return c.html(issuedPage(server.name, scopeText, key, scopes, label), 201);
+  return c.html(issuedPage(server.name, scopeText, key, scopes, finalLabel), 201);
 });
 
 /**
@@ -419,6 +422,10 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
     )
     .all<{ actor_type: string; actor_id: string; action: string; target: string | null; created_at: string }>();
 
+  const serverNote = new Map<string, string>(
+    (servers.results ?? []).map((s) => [s.id, s.note ?? '']),
+  );
+
   const serverRows = (servers.results ?? [])
     .map(
       (s) => `<tr>
@@ -474,7 +481,7 @@ async function dashboardPage(c: Context<AppEnv>, flash = ''): Promise<string> {
               : `<span class="ok">组</span> <span class="muted">${esc(k.owner ?? '')} @ ${esc(k.location ?? '')}</span>`
         }</td>
         <td>${esc(k.scopes)}</td>
-        <td>${esc(k.label ?? '—')}</td>
+        <td>${esc(k.label || (k.server_id ? serverNote.get(k.server_id) || '' : ''))}</td>
         <td class="muted">${esc(shortTime(k.created_at))}</td>
         <td class="muted">${esc(k.last_used_at ? shortTime(k.last_used_at) : '—')}</td>
         <td>${

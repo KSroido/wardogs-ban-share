@@ -103,9 +103,9 @@ adminRoutes.patch('/servers/:id', async (c) => {
 adminRoutes.post('/servers/:id/keys', async (c) => {
   const id = parseServerId(c.req.param('id'), 'id');
 
-  const server = await c.env.DB.prepare('SELECT id, owner, location, status FROM servers WHERE id = ?')
+  const server = await c.env.DB.prepare('SELECT id, owner, location, status, note FROM servers WHERE id = ?')
     .bind(id)
-    .first<{ id: string; owner: string | null; location: string | null; status: string }>();
+    .first<{ id: string; owner: string | null; location: string | null; status: string; note: string | null }>();
 
   if (!server) throw new ApiError(404, 'not_found', 'Server not found.');
   if (server.status !== 'active') {
@@ -113,7 +113,8 @@ adminRoutes.post('/servers/:id/keys', async (c) => {
   }
 
   const body = asRecord(await readOptionalJson(c));
-  const label = optionalString(body.label, 'label', 100);
+  // 没给 label 时默认用服务器备注，key 列表里就不用显示一排空值
+  const label = optionalString(body.label, 'label', 100) ?? optionalString(server.note, 'server.note', 100);
   const scopes = parseScopes(body.scopes);
   // group=true：发给「该管理方 + 该地理位置」下所有服共用的 key（server_id 置空）
   const asGroup = body.group === true || body.group === 'true';
